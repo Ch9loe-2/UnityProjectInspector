@@ -1,0 +1,42 @@
+[
+  {
+    "id": "scene.sample.exists",
+    "name": "SampleScene 场景存在",
+    "type": "SceneExists",
+    "target": "SampleScene",
+    "severity": "Info"
+  },
+  {
+    "id": "ui.monitoring_canvas.exists",
+    "name": "MonitoringCanvas 存在",
+    "type": "GameObjectExists",
+    "target": "MonitoringCanvas",
+    "severity": "Error"
+  },
+  {
+    "id": "ui.monitoring_canvas.canvas",
+    "name": "MonitoringCanvas 必须有 Canvas",
+    "type": "ComponentExists",
+    "target": "MonitoringCanvas",
+    "expectedClass": "Canvas",
+    "severity": "Error"
+  },
+  {
+    "id": "ui.device_list.binding",
+    "name": "设备列表按钮绑定",
+    "type": "UnityEventBinding",
+    "target": "Btn_DeviceList",
+    "expectedClass": "PanelSwitcher",
+    "expectedMethod": "ShowOverview",
+    "severity": "Error"
+  },
+  {
+    "id": "code.device_list.evidence",
+    "name": "设备列表按钮代码证据",
+    "type": "CodeEvidence",
+    "target": "Btn_DeviceList",
+    "expectedClass": "PanelSwitcher",
+    "expectedMethod": "ShowOverview",
+    "severity": "Info"
+  }
+]
