@@ -23,6 +23,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="TestData/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="TestData/**/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
