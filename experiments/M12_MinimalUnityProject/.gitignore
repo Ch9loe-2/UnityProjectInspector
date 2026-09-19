@@ -1,0 +1,17 @@
+# Unity auto-generated
+Library/
+Temp/
+Logs/
+UserSettings/
+Build/
+*.app
+*.dmg
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+*.csproj
+*.sln
+*.unityproj

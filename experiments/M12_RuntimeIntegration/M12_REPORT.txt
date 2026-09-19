@@ -1,0 +1,65 @@
+============================================================
+M12 Runtime Integration Report
+============================================================
+
+## 0. Technical Positioning
+
+  M12_Runner.py is an **experimental orchestrator / POC Runner** for validating
+  the end-to-end technical pipeline: static inspection → Player Build →
+  Runtime evidence collection.
+
+  It is NOT the formal UnityProjectInspector Runtime Runner.
+  It will NOT be moved into src/UnityProjectInspector.Core/.
+  Formal Runtime architecture is deferred to a later milestone.
+
+## 1. Baseline
+  Commit:   48039b8
+  Branch:   main
+  Working tree: experiments/ (untracked)
+
+## 2. Minimal Unity Project
+  Unity version: 2022.3.62f3c1
+  Project path:  /Users/tangluyi/WorkBuddy/2026-09-19-11-16-44/UnityProjectInspector/experiments/M12_MinimalUnityProject
+  Scene:         MainScene (Assets/Scenes/MainScene.unity)
+  GameObject:    RuntimeProbe
+  Script:        RuntimeProbe.cs (MonoBehaviour)
+
+## 3. Static Evidence
+  Assets exists                                 ✅ PASS
+  ProjectSettings exists                        ✅ PASS
+  Packages/manifest.json exists                 ✅ PASS
+  MainScene.unity exists                        ✅ PASS
+  RuntimeProbe.cs exists                        ✅ PASS
+  EditorBuildSettings.asset exists              ✅ PASS
+  .gitignore exists                             ✅ PASS
+  ProjectVersion.txt exists                     ✅ PASS
+  Unity version                                 2022.3.62f3c1
+  Unity-side validation                         ✅ PASS
+
+## 4. Player Build
+  Build                                         ✅ PASS
+  Build artifact                                /Users/tangluyi/WorkBuddy/2026-09-19-11-16-44/UnityProjectInspector/experiments/M12_MinimalUnityProject/Build/M12MinimalPlayer.app/Contents/MacOS/M12MinimalPlayer
+  Build time (s)                                N/A (see build.log)
+
+## 5. Runtime Evidence
+  Player launched                               ✅ PASS
+  isEditor == false                             ✅ PASS
+  isPlaying == true                             ✅ PASS
+  activeScene == MainScene                      ✅ PASS
+  success == true                               ✅ PASS
+  Poll time (s)                                 0.2
+
+## 6. Failure Handling
+  Timeout detection                             ✅ PASS (Runner correctly handles timeout)
+  Kill detection                                ✅ PASS (Runner can detect incomplete Player)
+
+## 7. Repository Safety
+  Library tracked                               NO (in .gitignore)
+  Temp tracked                                     NO (in .gitignore)
+  Logs tracked                                     NO (in .gitignore)
+  UserSettings tracked                          NO (in .gitignore)
+  Build tracked                                   NO (in .gitignore)
+
+## 8. Final Decision
+  M12: PASS
+============================================================
