@@ -6,11 +6,14 @@ namespace UnityProjectInspector.Core.Rules;
 /// Converts a RuleDefinition into an IRule instance.
 ///
 /// Mapping:
-///   SceneExists        → SceneExistsRule(Target)
-///   GameObjectExists   → GameObjectExistsRule(Target)
-///   ComponentExists    → ComponentExistsRule(Target, ExpectedClass)
-///   UnityEventBinding  → UnityEventBindingRule(Target, ExpectedMethod, ExpectedClass)
-///   CodeEvidence       → CodeEvidenceRule(Target, ExpectedMethod)
+///   SceneExists          → SceneExistsRule(Target)
+///   GameObjectExists     → GameObjectExistsRule(Target)
+///   ComponentExists      → ComponentExistsRule(Target, ExpectedClass)
+///   GameObjectHierarchy  → GameObjectHierarchyRule(Target, ExpectedParent)
+///   ScriptAttached       → ScriptAttachedRule(Target, ExpectedClass)
+///   FileExists           → FileExistsRule(Target)
+///   UnityEventBinding    → UnityEventBindingRule(Target, ExpectedMethod, ExpectedClass)
+///   CodeEvidence         → CodeEvidenceRule(Target, ExpectedMethod)
 ///
 /// The factory does NOT validate the definition against a Unity project.
 /// It only constructs the IRule with the parameters from the definition.
@@ -27,11 +30,15 @@ public static class RuleFactory
             "SceneExists" => CreateSceneExists(definition),
             "GameObjectExists" => CreateGameObjectExists(definition),
             "ComponentExists" => CreateComponentExists(definition),
+            "GameObjectHierarchy" => CreateGameObjectHierarchy(definition),
+            "ScriptAttached" => CreateScriptAttached(definition),
+            "FileExists" => CreateFileExists(definition),
             "UnityEventBinding" => CreateUnityEventBinding(definition),
             "CodeEvidence" => CreateCodeEvidence(definition),
             _ => throw new ArgumentException(
                 $"Unknown rule type '{definition.Type}'. Supported types: SceneExists, " +
-                "GameObjectExists, ComponentExists, UnityEventBinding, CodeEvidence")
+                "GameObjectExists, ComponentExists, GameObjectHierarchy, ScriptAttached, " +
+                "FileExists, UnityEventBinding, CodeEvidence")
         };
     }
 
@@ -82,5 +89,33 @@ public static class RuleFactory
         // CodeEvidenceRule constructor: (sourceGameObjectName, targetMethodName, expectedCallTarget?, expectedArgument?)
         // For JSON-based usage, we only verify the method exists — no expected call or argument by default.
         return new CodeEvidenceRule(source, methodName);
+    }
+
+    private static GameObjectHierarchyRule CreateGameObjectHierarchy(RuleDefinition def)
+    {
+        var childName = def.Target
+            ?? throw new ArgumentException("GameObjectHierarchy rule requires 'target' (child GameObject name)");
+        var parentName = def.ExpectedParent
+            ?? throw new ArgumentException("GameObjectHierarchy rule requires 'expectedParent'");
+
+        return new GameObjectHierarchyRule(childName, parentName);
+    }
+
+    private static ScriptAttachedRule CreateScriptAttached(RuleDefinition def)
+    {
+        var goName = def.Target
+            ?? throw new ArgumentException("ScriptAttached rule requires 'target' (GameObject name)");
+        var className = def.ExpectedClass
+            ?? throw new ArgumentException("ScriptAttached rule requires 'expectedClass'");
+
+        return new ScriptAttachedRule(goName, className);
+    }
+
+    private static FileExistsRule CreateFileExists(RuleDefinition def)
+    {
+        var path = def.Target
+            ?? throw new ArgumentException("FileExists rule requires 'target' (relative file path)");
+
+        return new FileExistsRule(path);
     }
 }

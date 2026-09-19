@@ -38,5 +38,28 @@
     "expectedClass": "PanelSwitcher",
     "expectedMethod": "ShowOverview",
     "severity": "Info"
+  },
+  {
+    "id": "hierarchy.btn_detail.parent",
+    "name": "Btn_DeviceList 在 BottomNavBar 下",
+    "type": "GameObjectHierarchy",
+    "target": "Btn_DeviceList",
+    "expectedParent": "BottomNavBar",
+    "severity": "Error"
+  },
+  {
+    "id": "script.monitoring.panel_switcher",
+    "name": "MonitoringCanvas 挂载 PanelSwitcher",
+    "type": "ScriptAttached",
+    "target": "MonitoringCanvas",
+    "expectedClass": "PanelSwitcher",
+    "severity": "Error"
+  },
+  {
+    "id": "scene.sample.file_exists",
+    "name": "SampleScene.unity 文件存在",
+    "type": "FileExists",
+    "target": "Assets/Scenes/SampleScene.unity",
+    "severity": "Error"
   }
 ]

@@ -9,11 +9,14 @@ namespace UnityProjectInspector.Core.Models.Rules;
 /// RuleDefinition → RuleFactory → IRule → RuleEngine → RuleResult.
 ///
 /// Different rule types use different fields:
-///   SceneExists:        Target → scene name
-///   GameObjectExists:   Target → GameObject name
-///   ComponentExists:    Target → GameObject name, ExpectedClass → component type
-///   UnityEventBinding:  Target → source GameObject, ExpectedClass → target class, ExpectedMethod → method name
-///   CodeEvidence:       Target → source GameObject, ExpectedMethod → method name
+///   SceneExists:          Target → scene name
+///   GameObjectExists:     Target → GameObject name
+///   ComponentExists:      Target → GameObject name, ExpectedClass → component type
+///   GameObjectHierarchy:  Target → child GameObject, ExpectedParent → parent name
+///   ScriptAttached:       Target → GameObject name, ExpectedClass → script class name
+///   FileExists:           Target → relative file path under project root
+///   UnityEventBinding:    Target → source GameObject, ExpectedClass → target class, ExpectedMethod → method name
+///   CodeEvidence:         Target → source GameObject, ExpectedMethod → method name
 ///
 /// All fields beyond Id/Name/Type are nullable — not all rules need them.
 /// </summary>
@@ -53,9 +56,16 @@ public class RuleDefinition
     /// Expected class/component type name.
     ///   ComponentExists   → component type (e.g. "Canvas")
     ///   UnityEventBinding → target script class (e.g. "PanelSwitcher")
+    ///   ScriptAttached    → script class name (e.g. "PanelSwitcher")
     /// </summary>
     [JsonPropertyName("expectedClass")]
     public string? ExpectedClass { get; init; }
+
+    /// <summary>
+    /// Expected parent GameObject name for GameObjectHierarchy rules.
+    /// </summary>
+    [JsonPropertyName("expectedParent")]
+    public string? ExpectedParent { get; init; }
 
     /// <summary>
     /// Expected method name for UnityEvent/CodeEvidence rules.

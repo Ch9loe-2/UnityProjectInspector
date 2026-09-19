@@ -186,7 +186,7 @@ public class Milestone7_RuleConfigurationTests
 
         // Assert
         Assert.NotNull(defs);
-        Assert.Equal(5, defs.Count);
+        Assert.Equal(8, defs.Count);
 
         // Verify first entry
         Assert.Equal("scene.sample.exists", defs[0].Id);
@@ -533,11 +533,35 @@ public class Milestone7_RuleConfigurationTests
         var scanner = new UnityProjectScanner();
         var projectInfo = scanner.Scan(RealProjectPath);
 
+        // Build GameObjectScriptNames for ScriptAttachedRule support
+        var resolver = new ScriptResolver(RealProjectPath);
+        var scriptMap = new Dictionary<long, List<string>>();
+        foreach (var go in scene.GameObjects)
+        {
+            var scriptNames = new List<string>();
+            foreach (var comp in go.Components)
+            {
+                if (comp.ScriptGuid != null)
+                {
+                    var scriptInfo = resolver.ResolveScript(comp.ScriptGuid);
+                    if (scriptInfo != null)
+                    {
+                        scriptNames.Add(scriptInfo.ScriptName);
+                    }
+                }
+            }
+            if (scriptNames.Count > 0)
+            {
+                scriptMap[go.FileId] = scriptNames;
+            }
+        }
+
         var context = new InspectionContext
         {
             ProjectInfo = projectInfo,
             EventBindings = bindings,
             CodeLinks = links,
+            GameObjectScriptNames = scriptMap,
         };
 
         // 4. Run through RuleEngine
@@ -565,21 +589,28 @@ public class Milestone7_RuleConfigurationTests
         _output.WriteLine($"  NotEvaluated: {notEvaluated}");
 
         // Assert specific expected results
-        // scene.sample.exists → SampleScene exists → Passed
+        // Index 0: scene.sample.exists → Passed
         Assert.Equal(RuleStatus.Passed, results[0].Status);
 
-        // ui.monitoring_canvas.exists → MonitoringCanvas exists in scene → Passed
+        // Index 1: ui.monitoring_canvas.exists → Passed
         Assert.Equal(RuleStatus.Passed, results[1].Status);
 
-        // ui.monitoring_canvas.canvas → MonitoringCanvas has Canvas component → Passed
+        // Index 2: ui.monitoring_canvas.canvas → Passed
         Assert.Equal(RuleStatus.Passed, results[2].Status);
 
-        // ui.device_list.binding → Btn_DeviceList → PanelSwitcher.ShowOverview → Passed
-        // (This is the key regression: class name ≠ GO name — PanelSwitcher on MonitoringCanvas)
+        // Index 3: ui.device_list.binding → Passed (class name ≠ GO name regression)
         Assert.Equal(RuleStatus.Passed, results[3].Status);
 
-        // code.device_list.evidence → CodeEvidence → at least exists (may be PartiallyResolved)
+        // Index 4: code.device_list.evidence → Not NotEvaluated
         Assert.NotEqual(RuleStatus.NotEvaluated, results[4].Status);
-        // Could be Passed or Failed depending on whether link exists
+
+        // Index 5: hierarchy.btn_detail.parent → Btn_DeviceList under BottomNavBar → Passed
+        Assert.Equal(RuleStatus.Passed, results[5].Status);
+
+        // Index 6: script.monitoring.panel_switcher → MonitoringCanvas has PanelSwitcher → Passed
+        Assert.Equal(RuleStatus.Passed, results[6].Status);
+
+        // Index 7: scene.sample.file_exists → SampleScene.unity file exists → Passed
+        Assert.Equal(RuleStatus.Passed, results[7].Status);
     }
 }

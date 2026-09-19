@@ -25,6 +25,18 @@ public class InspectionContext
     /// </summary>
     public List<UnityEventCodeLink> CodeLinks { get; init; } = new();
 
+    /// <summary>
+    /// Maps each GameObject fileId to the list of C# script names (ScriptName)
+    /// attached to it via MonoBehaviour components.
+    ///
+    /// Populated during context construction by cross-referencing
+    /// ComponentInfo.ScriptGuid with ScriptInfo.ScriptName.
+    /// Empty if ScriptResolver was not used during construction.
+    ///
+    /// Used by ScriptAttachedRule to verify a specific script is on a GameObject.
+    /// </summary>
+    public Dictionary<long, List<string>> GameObjectScriptNames { get; init; } = new();
+
     // ─── Convenience helpers for rules ───
 
     /// <summary>
