@@ -17,6 +17,12 @@ public class ComponentInfo
     public long FileId { get; init; }
 
     /// <summary>
+    /// For MonoBehaviour components, the GUID of the referenced script asset.
+    /// Null for non-MonoBehaviour components or when no script reference exists.
+    /// </summary>
+    public string? ScriptGuid { get; init; }
+
+    /// <summary>
     /// Optional: future extension point for component-specific properties.
     /// </summary>
     public Dictionary<string, string> Properties { get; init; } = new();

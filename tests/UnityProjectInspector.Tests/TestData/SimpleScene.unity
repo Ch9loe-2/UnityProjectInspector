@@ -61,7 +61,7 @@ Transform:
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_Name: PlayerController
-  m_Script: {fileID: 11500000, guid: abc123}
+  m_Script: {fileID: 11500000, guid: abcdef1234567890abcdef1234567890, type: 3}
 --- !u!95 &222
 Animator:
   m_ObjectHideFlags: 0
@@ -139,3 +139,13 @@ RectTransform:
 --- !u!114 &261
 Button:
   m_ObjectHideFlags: 0
+--- !u!1 &107
+GameObject:
+  m_ObjectHideFlags: 0
+  m_Name: GameManager
+  m_Component:
+  - component: {fileID: 270}
+--- !u!114 &270
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fedcba0987654321fedcba0987654321, type: 3}

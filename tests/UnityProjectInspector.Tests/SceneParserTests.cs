@@ -20,7 +20,7 @@ public class SceneParserTests
 
         // Assert
         Assert.NotNull(scene);
-        Assert.Equal(7, scene.GameObjects.Count);
+        Assert.Equal(8, scene.GameObjects.Count);
     }
 
     [Fact]
@@ -41,6 +41,7 @@ public class SceneParserTests
         Assert.Contains("Ground", names);
         Assert.Contains("UI Canvas", names);
         Assert.Contains("PlayButton", names);
+        Assert.Contains("GameManager", names);
     }
 
     [Fact]
@@ -54,7 +55,7 @@ public class SceneParserTests
 
         // Assert
         var ids = scene.GameObjects.Select(g => g.FileId).OrderBy(id => id).ToList();
-        Assert.Equal([100, 101, 102, 103, 104, 105, 106], ids);
+        Assert.Equal([100, 101, 102, 103, 104, 105, 106, 107], ids);
     }
 
     #endregion
@@ -156,6 +157,93 @@ public class SceneParserTests
         // Assert
         Assert.Contains(playButton.Components, c => c.Type == "Button");
         Assert.Contains(playButton.Components, c => c.Type == "RectTransform");
+    }
+
+    #endregion
+
+    #region MonoBehaviour Parsing
+
+    [Fact]
+    public void Parse_SimpleScene_IdentifiesMonoBehaviour()
+    {
+        // Arrange
+        var testFile = Path.Combine("TestData", "SimpleScene.unity");
+        var scene = _parser.Parse(testFile);
+        var player = scene.GameObjects.Single(g => g.Name == "Player");
+
+        // Assert
+        Assert.Contains(player.Components, c => c.Type == "MonoBehaviour");
+    }
+
+    [Fact]
+    public void Parse_SimpleScene_MonoBehaviourHasCorrectFileId()
+    {
+        // Arrange
+        var testFile = Path.Combine("TestData", "SimpleScene.unity");
+        var scene = _parser.Parse(testFile);
+        var player = scene.GameObjects.Single(g => g.Name == "Player");
+        var mono = player.Components.Single(c => c.Type == "MonoBehaviour");
+
+        // Assert
+        Assert.Equal(221, mono.FileId);
+    }
+
+    [Fact]
+    public void Parse_SimpleScene_MonoBehaviourHasScriptGuid()
+    {
+        // Arrange
+        var testFile = Path.Combine("TestData", "SimpleScene.unity");
+        var scene = _parser.Parse(testFile);
+        var player = scene.GameObjects.Single(g => g.Name == "Player");
+        var mono = player.Components.Single(c => c.Type == "MonoBehaviour");
+
+        // Assert
+        Assert.Equal("abcdef1234567890abcdef1234567890", mono.ScriptGuid);
+    }
+
+    [Fact]
+    public void Parse_SimpleScene_NonMonoBehaviourHasNoScriptGuid()
+    {
+        // Arrange
+        var testFile = Path.Combine("TestData", "SimpleScene.unity");
+        var scene = _parser.Parse(testFile);
+        var camera = scene.GameObjects.Single(g => g.Name == "Main Camera");
+        var cameraComp = camera.Components.Single(c => c.Type == "Camera");
+
+        // Assert
+        Assert.Null(cameraComp.ScriptGuid);
+    }
+
+    [Fact]
+    public void Parse_SimpleScene_MultipleMonoBehaviours_HaveDifferentGuids()
+    {
+        // Arrange
+        var testFile = Path.Combine("TestData", "SimpleScene.unity");
+        var scene = _parser.Parse(testFile);
+        var player = scene.GameObjects.Single(g => g.Name == "Player");
+        var gameManager = scene.GameObjects.Single(g => g.Name == "GameManager");
+
+        var playerMono = player.Components.Single(c => c.Type == "MonoBehaviour");
+        var gmMono = gameManager.Components.Single(c => c.Type == "MonoBehaviour");
+
+        // Assert
+        Assert.Equal("abcdef1234567890abcdef1234567890", playerMono.ScriptGuid);
+        Assert.Equal("fedcba0987654321fedcba0987654321", gmMono.ScriptGuid);
+    }
+
+    [Fact]
+    public void Parse_SimpleScene_GameManager_HasOnlyMonoBehaviour()
+    {
+        // Arrange
+        var testFile = Path.Combine("TestData", "SimpleScene.unity");
+        var scene = _parser.Parse(testFile);
+        var gameManager = scene.GameObjects.Single(g => g.Name == "GameManager");
+
+        // Assert — GameManager has only a MonoBehaviour (no Transform known, no other component)
+        Assert.Single(gameManager.Components);
+        Assert.Equal("MonoBehaviour", gameManager.Components[0].Type);
+        Assert.Equal(270, gameManager.Components[0].FileId);
+        Assert.Equal("fedcba0987654321fedcba0987654321", gameManager.Components[0].ScriptGuid);
     }
 
     #endregion

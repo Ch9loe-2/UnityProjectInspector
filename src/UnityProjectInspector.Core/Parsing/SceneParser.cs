@@ -33,6 +33,10 @@ public partial class SceneParser
     [GeneratedRegex(@"m_Father:\s*\{fileID:\s*(\d+)\}", RegexOptions.Compiled)]
     private static partial Regex FatherRefRegex();
 
+    // Regex: match "guid: <hex>" in a m_Script reference (e.g. "m_Script: {fileID: 11500000, guid: abcdef..., type: 3}")
+    [GeneratedRegex(@"guid:\s*([0-9a-fA-F]+)", RegexOptions.Compiled)]
+    private static partial Regex ScriptGuidRegex();
+
     // Known Unity component type names
     private static readonly HashSet<string> KnownComponentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -45,6 +49,7 @@ public partial class SceneParser
         "Animator",
         "AudioSource",
         "TextMeshProUGUI",
+        "MonoBehaviour",
     };
 
     /// <summary>
@@ -176,10 +181,15 @@ public partial class SceneParser
             {
                 if (componentBlocks.TryGetValue(compFileId, out var compBlock))
                 {
+                    var scriptGuid = compBlock.TypeName == "MonoBehaviour"
+                        ? ParseScriptGuid(compBlock.RawPropertiesJoined)
+                        : null;
+
                     goInfo.Components.Add(new ComponentInfo
                     {
                         Type = compBlock.TypeName ?? "UnknownComponent",
                         FileId = compBlock.FileId,
+                        ScriptGuid = scriptGuid,
                     });
                 }
             }
@@ -286,6 +296,16 @@ public partial class SceneParser
         }
 
         return refs;
+    }
+
+    /// <summary>
+    /// Extracts the script GUID from a MonoBehaviour block's m_Script reference.
+    /// Returns null if no GUID reference is found.
+    /// </summary>
+    private static string? ParseScriptGuid(string rawProperties)
+    {
+        var match = ScriptGuidRegex().Match(rawProperties);
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     /// <summary>
