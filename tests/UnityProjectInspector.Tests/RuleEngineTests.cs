@@ -211,11 +211,115 @@ public class RuleEngineTests
     }
 
     [Fact]
-    public void UnityEventBindingRule_WrongTargetGameObject_Fails()
+    public void UnityEventBindingRule_WrongClassName_Fails()
     {
-        // Arrange — StartButton targets GameManager, not SomeOtherObject
+        // Arrange — StartButton targets GameManager, not "Player"
         var context = MakeUnityEventContext();
         var rule = new UnityEventBindingRule("StartButton", "Start2D", "Player");
+
+        // Act
+        var result = rule.Evaluate(context);
+
+        // Assert
+        Assert.Equal(RuleStatus.Failed, result.Status);
+    }
+
+    [Fact]
+    public void UnityEventBindingRule_ClassNameDiffersFromGOName_Passes()
+    {
+        // Arrange — Simulate the real 3DIndustrialMonitor scenario:
+        //   Btn_DeviceList (source GO) → PanelSwitcher.ShowOverview()
+        //   PanelSwitcher script lives on "MonitoringCanvas" (different GO name!)
+        //
+        // This test verifies that the rule matches by CLASS NAME (via
+        // TargetAssemblyTypeName), NOT by target GameObject name.
+        var context = new InspectionContext
+        {
+            ProjectInfo = new UnityProjectInfo
+            {
+                RootPath = "/test",
+                IsValid = true,
+                Scenes = new List<SceneInfo>
+                {
+                    new()
+                    {
+                        Name = "TestScene",
+                        FilePath = "/test/scenes/TestScene.unity",
+                        GameObjects = new List<GameObjectInfo>
+                        {
+                            new() { FileId = 100, Name = "MonitoringCanvas" },
+                            new() { FileId = 200, Name = "Btn_DeviceList" },
+                        },
+                    },
+                },
+            },
+            EventBindings = new List<UnityEventBindingInfo>
+            {
+                new()
+                {
+                    SourceGameObjectFileId = 200, // Btn_DeviceList
+                    SourceComponentFileId = 201,
+                    MethodName = "ShowOverview",
+                    TargetAssemblyTypeName = "PanelSwitcher, Assembly-CSharp",
+                    TargetFileId = 101,
+                    TargetGameObjectFileId = 100, // MonitoringCanvas
+                    IsResolved = true,
+                },
+            },
+        };
+
+        // Rule expects class name "PanelSwitcher" (NOT the GameObject name "MonitoringCanvas")
+        var rule = new UnityEventBindingRule("Btn_DeviceList", "ShowOverview", "PanelSwitcher");
+
+        // Act
+        var result = rule.Evaluate(context);
+
+        // Assert
+        Assert.Equal(RuleStatus.Passed, result.Status);
+    }
+
+    [Fact]
+    public void UnityEventBindingRule_WrongClassName_EvenWhenGOExists_Fails()
+    {
+        // Arrange — Same scenario as above, but rule expects wrong class name
+        var context = new InspectionContext
+        {
+            ProjectInfo = new UnityProjectInfo
+            {
+                RootPath = "/test",
+                IsValid = true,
+                Scenes = new List<SceneInfo>
+                {
+                    new()
+                    {
+                        Name = "TestScene",
+                        FilePath = "/test/scenes/TestScene.unity",
+                        GameObjects = new List<GameObjectInfo>
+                        {
+                            new() { FileId = 100, Name = "MonitoringCanvas" },
+                            new() { FileId = 200, Name = "Btn_DeviceList" },
+                        },
+                    },
+                },
+            },
+            EventBindings = new List<UnityEventBindingInfo>
+            {
+                new()
+                {
+                    SourceGameObjectFileId = 200,
+                    SourceComponentFileId = 201,
+                    MethodName = "ShowOverview",
+                    TargetAssemblyTypeName = "PanelSwitcher, Assembly-CSharp",
+                    TargetFileId = 101,
+                    TargetGameObjectFileId = 100,
+                    IsResolved = true,
+                },
+            },
+        };
+
+        // Rule expects "MonitoringCanvas" (a GO name) — this should FAIL because
+        // the binding's class is "PanelSwitcher", not "MonitoringCanvas".
+        var rule = new UnityEventBindingRule("Btn_DeviceList", "ShowOverview", "MonitoringCanvas");
 
         // Act
         var result = rule.Evaluate(context);
