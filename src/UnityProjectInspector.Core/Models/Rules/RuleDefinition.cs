@@ -87,4 +87,15 @@ public class RuleDefinition
     /// </summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
+
+    /// <summary>
+    /// Evidence requirement for this rule.
+    /// "StaticOnly" (default) — static analysis is sufficient.
+    /// "RuntimeRequired" — runtime verification is required.
+    ///
+    /// When null or absent, defaults to StaticOnly for backward compatibility.
+    /// All existing rule JSON files continue to work without modification.
+    /// </summary>
+    [JsonPropertyName("evidenceRequirement")]
+    public string? EvidenceRequirement { get; init; }
 }
