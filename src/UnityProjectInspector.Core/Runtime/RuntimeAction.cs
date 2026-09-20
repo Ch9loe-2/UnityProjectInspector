@@ -9,7 +9,13 @@ namespace UnityProjectInspector.Core.Runtime;
 ///
 /// Launch is NOT an action — RuntimeRunner owns process lifecycle.
 /// Actions are executed AFTER the Player is already running.
+///
+/// JSON polymorphism: use type discriminator in JSON to choose subtype.
 /// </summary>
+[JsonDerivedType(typeof(WaitAction), "Wait")]
+[JsonDerivedType(typeof(ClickButtonAction), "ClickButton")]
+[JsonDerivedType(typeof(ObserveActiveSceneAction), "ObserveActiveScene")]
+[JsonDerivedType(typeof(ReadLogsAction), "ReadLogs")]
 public abstract record RuntimeAction
 {
     /// <summary>

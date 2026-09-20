@@ -1,10 +1,16 @@
+using System.Text.Json.Serialization;
+
 namespace UnityProjectInspector.Core.Runtime;
 
 /// <summary>
 /// Base record for all Runtime Assertions.
 /// Assertions are evaluated AFTER all actions in a test script complete.
 /// They examine collected evidence and determine Passed/Failed/NotEvaluated.
+///
+/// JSON polymorphism: use type discriminator in JSON to choose subtype.
 /// </summary>
+[JsonDerivedType(typeof(AssertActiveScene), "AssertActiveScene")]
+[JsonDerivedType(typeof(AssertNoExceptions), "AssertNoExceptions")]
 public abstract record RuntimeAssertion
 {
     /// <summary>

@@ -1,0 +1,152 @@
+{
+  "id": "maze-2d-basic",
+  "name": "2D Maze Basic Assignment",
+  "description": "Validates a basic 2D maze Unity project with a start menu that transitions to the target scene",
+  "requirements": [
+    {
+      "id": "maze-mainmenu-exists",
+      "name": "MainMenu scene exists",
+      "description": "The MainMenu scene must exist in the project",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.mainmenu.exists",
+          "name": "MainMenu exists",
+          "type": "SceneExists",
+          "target": "MainMenu",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "maze-start-button",
+      "name": "MainMenuButton exists in MainMenu",
+      "description": "The MainMenu scene must contain a MainMenuButton GameObject",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "go.mainmenubutton.exists",
+          "name": "MainMenuButton exists",
+          "type": "GameObjectExists",
+          "target": "MainMenuButton",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "maze-start-binding",
+      "name": "MainMenuButton onClick bound to SceneSwitcher.SwitchScene",
+      "description": "The MainMenuButton's onClick must be bound to a method that switches scenes",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "event.mainmenubutton.switch",
+          "name": "UnityEvent binding exists",
+          "type": "UnityEventBinding",
+          "target": "MainMenuButton",
+"expectedMethod": "SwitchToTargetScene",
+      "expectedClass": "SceneSwitcher",
+      "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "maze-target-scene",
+      "name": "TargetScene exists",
+      "description": "The target scene that the button navigates to must exist",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.target.exists",
+          "name": "TargetScene exists",
+          "type": "SceneExists",
+          "target": "TargetScene",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "maze-start-runtime",
+      "name": "Click MainMenuButton transitions to TargetScene at runtime",
+      "description": "When the MainMenuButton is clicked at runtime, the active scene must change to TargetScene",
+      "evidenceRequirement": "RuntimeRequired",
+      "staticRules": [
+        {
+          "id": "code.start2d.loadscene",
+          "name": "SceneSwitcher code calls LoadScene",
+          "type": "CodeEvidence",
+          "target": "MainMenuButton",
+          "expectedMethod": "SwitchToTargetScene",
+          "severity": "Warning"
+        }
+      ],
+      "runtimeTest": {
+        "name": "Click MainMenuButton → Load TargetScene",
+        "actions": [
+          {
+            "$type": "Wait",
+            "actionId": "init_wait",
+            "milliseconds": 500
+          },
+          {
+            "$type": "ClickButton",
+            "actionId": "click_button",
+            "gameObjectName": "MainMenuButton"
+          },
+          {
+            "$type": "Wait",
+            "actionId": "scene_wait",
+            "milliseconds": 1000
+          },
+          {
+            "$type": "ObserveActiveScene",
+            "actionId": "observe_scene"
+          }
+        ],
+        "assertions": [
+          {
+            "$type": "AssertActiveScene",
+            "assertionId": "assert_scene",
+            "expectedSceneName": "TargetScene"
+          }
+        ]
+      }
+    },
+    {
+      "id": "maze-no-runtime-exception",
+      "name": "No runtime exceptions during verification",
+      "description": "The runtime session must not produce any exceptions",
+      "evidenceRequirement": "RuntimeRequired",
+      "runtimeTest": {
+        "name": "Check no runtime exceptions",
+        "actions": [
+          {
+            "$type": "Wait",
+            "actionId": "init_wait",
+            "milliseconds": 200
+          },
+          {
+            "$type": "ClickButton",
+            "actionId": "click_button",
+            "gameObjectName": "MainMenuButton"
+          },
+          {
+            "$type": "Wait",
+            "actionId": "scene_wait",
+            "milliseconds": 1000
+          },
+          {
+            "$type": "ReadLogs",
+            "actionId": "read_logs"
+          }
+        ],
+        "assertions": [
+          {
+            "$type": "AssertNoExceptions",
+            "assertionId": "assert_no_ex"
+          }
+        ]
+      }
+    }
+  ]
+}
