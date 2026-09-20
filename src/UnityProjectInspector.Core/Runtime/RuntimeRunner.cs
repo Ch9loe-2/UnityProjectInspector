@@ -236,14 +236,21 @@ public class RuntimeRunner : IRuntimeRunner
         bool processExited = false;
 
         // Poll for evidence or process exit
+        //
+        // IMPORTANT: Check evidence FILES before checking process HasExited.
+        //
+        // The M12 RuntimeProbe writes evidence.json then calls Application.Quit().
+        // If the Player completes within a single poll interval:
+        //   ├── Player writes evidence.json ✓ (before Quit)
+        //   ├── Player writes m12_done.marker ✓
+        //   ├── Player calls Application.Quit()
+        //   └── Process exits (HasExited=true)
+        //
+        // If we check HasExited FIRST, we break without ever looking at the
+        // evidence files that were written before the process exited.
+        // File I/O is persistent — evidence written to disk survives process exit.
         while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
         {
-            if (playerProcess.HasExited)
-            {
-                processExited = true;
-                break;
-            }
-
             // Check marker file (Player writes this when done)
             if (File.Exists(markerFile))
             {
@@ -255,6 +262,18 @@ public class RuntimeRunner : IRuntimeRunner
             if (File.Exists(evidenceFile))
             {
                 evidence = TryReadEvidence(evidenceFile);
+                break;
+            }
+
+            // Only check HasExited after checking for evidence files.
+            // Player may have exited after writing evidence + marker;
+            // the files persist on disk and must be read before classifying.
+            if (playerProcess.HasExited)
+            {
+                // Before declaring ProcessExited, do one final check on disk
+                // — the evidence may have been written just before the process exited.
+                evidence = TryReadEvidence(evidenceFile);
+                processExited = evidence == null;
                 break;
             }
 
