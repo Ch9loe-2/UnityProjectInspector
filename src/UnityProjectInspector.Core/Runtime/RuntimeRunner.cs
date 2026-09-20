@@ -23,7 +23,7 @@ namespace UnityProjectInspector.Core.Runtime;
 /// - File-based IPC: command.json written by Core, read by Player, results reverse
 /// - All processes tracked by PID, safely terminated on timeout/error
 /// </summary>
-public class RuntimeRunner : IRuntimeRunner
+public class RuntimeRunner : IRuntimeRunner, ISupportsSessionSharing
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -100,6 +100,307 @@ public class RuntimeRunner : IRuntimeRunner
         // Phase 2: Launch + Action Pipeline + Assert
         var playerExePath = buildPhase.PlayerExecutablePath!;
         return await RunActionPipelineAsync(options, playerExePath, script, session, cancellationToken);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // ISupportsSessionSharing — M17 Session Lifecycle
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Creates a new RuntimeSessionScope: builds the Player, launches it,
+    /// waits for it to become ready, and reads initial scene evidence.
+    ///
+    /// The caller owns the returned scope and MUST call scope.Dispose().
+    /// </summary>
+    public async Task<RuntimeSessionScope> CreateSessionAsync(
+        RuntimeRunOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var session = new RuntimeSession
+        {
+            ProjectPath = options.ProjectPath,
+            UnityVersion = GetUnityVersion(options.UnityExecutable),
+            StartedAt = DateTime.UtcNow,
+        };
+
+        // Phase 1: Build Player
+        var buildPhase = await BuildPlayerAsync(options, cancellationToken);
+        session.Message = buildPhase.Message;
+        if (buildPhase.Status != RuntimeResultStatus.Passed)
+        {
+            session.Result = buildPhase.Status;
+            return RuntimeSessionScope.CreateFailed(session);
+        }
+
+        var playerExePath = buildPhase.PlayerExecutablePath!;
+
+        // Phase 2: Setup session directory
+        var sessionDir = string.IsNullOrEmpty(options.SessionDirectory)
+            ? CreateTempSessionDir()
+            : options.SessionDirectory;
+
+        Directory.CreateDirectory(sessionDir);
+        var commandsDir = Path.Combine(sessionDir, options.CommandsSubDir);
+        var resultsDir = Path.Combine(sessionDir, options.ResultsSubDir);
+        Directory.CreateDirectory(commandsDir);
+        Directory.CreateDirectory(resultsDir);
+
+        var evidenceFile = Path.Combine(sessionDir, options.EvidenceFileName);
+        var doneMarker = Path.Combine(sessionDir, options.DoneMarkerFileName);
+        var readyMarker = Path.Combine(sessionDir, options.ReadyMarkerFileName);
+
+        // Clean any stale markers
+        TryDeleteFile(readyMarker);
+        TryDeleteFile(doneMarker);
+        TryDeleteFile(evidenceFile);
+
+        // Phase 3: Launch Player
+        var env = new Dictionary<string, string>
+        {
+            [options.SessionDirEnvVar] = sessionDir,
+        };
+
+        var playerProcess = StartProcess(playerExePath,
+            "-batchmode -nographics", env);
+
+        if (playerProcess == null)
+        {
+            session.Result = RuntimeResultStatus.ProcessExited;
+            session.Message = $"Failed to start Player process at {playerExePath}";
+            return RuntimeSessionScope.CreateFailed(session);
+        }
+
+        var playerPid = playerProcess.Id;
+
+        // Phase 4: Wait for ready
+        var readyResult = WaitForReady(readyMarker, playerProcess,
+            options.ReadyTimeoutSeconds, options.PollIntervalMs);
+
+        if (readyResult == ReadyResult.Timeout)
+        {
+            KillProcess(playerPid);
+            SafeWaitExitSync(playerProcess, 5000);
+            playerProcess.Close(); // Dispose since we're not transferring ownership
+            session.Result = RuntimeResultStatus.Timeout;
+            session.Message = $"Player did not become ready within {options.ReadyTimeoutSeconds}s.";
+            return RuntimeSessionScope.CreateFailed(session);
+        }
+        if (readyResult == ReadyResult.ProcessExited)
+        {
+            var exitCode = playerProcess.ExitCode;
+            playerProcess.Close(); // Dispose since we're not transferring ownership
+            session.Result = RuntimeResultStatus.ProcessExited;
+            session.Message = $"Player exited (code {exitCode}) before becoming ready.";
+            return RuntimeSessionScope.CreateFailed(session);
+        }
+
+        // Phase 5: Read initial active scene (pre-action baseline)
+        // NOTE: Process ownership transfers to RuntimeSessionScope — do NOT dispose here.
+        // RuntimeSessionScope.Dispose() handles process cleanup.
+        var scope = new RuntimeSessionScope(
+            session, playerProcess, playerPid, sessionDir,
+            commandsDir, resultsDir, evidenceFile, doneMarker,
+            options.CommandTimeoutSeconds, options.PollIntervalMs);
+
+        var initialSceneEvidence = await SendCommandAndReadResultAsync(
+            new RuntimeCommand { Action = "ObserveActiveScene" },
+            commandsDir, resultsDir, 0, options.CommandTimeoutSeconds, cancellationToken);
+
+        if (initialSceneEvidence != null)
+        {
+            session.Evidence.Add(initialSceneEvidence);
+            scope.InitialSceneEvidence = initialSceneEvidence;
+        }
+
+        session.Result = RuntimeResultStatus.Passed;
+        session.Message = $"Session created. Player PID={playerPid}";
+        return scope;
+    }
+
+    /// <summary>
+    /// Executes a RuntimeTestScript's actions on an already-running session scope
+    /// and evaluates assertions against the accumulated evidence.
+    ///
+    /// Does NOT send Quit or finalize the session.
+    /// Evidence is appended to scope.Session.Evidence (shared across requirements).
+    ///
+    /// The returned RuntimeSession contains the per-requirement assertion result,
+    /// but the scope.Session continues to accumulate evidence.
+    /// </summary>
+    public async Task<RuntimeSession> ExecuteScriptOnScopeAsync(
+        RuntimeSessionScope scope,
+        RuntimeTestScript script,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        ArgumentNullException.ThrowIfNull(script);
+
+        if (scope.IsFailed || !scope.IsUsable)
+        {
+            return new RuntimeSession
+            {
+                ProjectPath = scope.Session.ProjectPath ?? "/tmp",
+                UnityVersion = scope.Session.UnityVersion,
+                StartedAt = DateTime.UtcNow,
+                Result = RuntimeResultStatus.NotEvaluated,
+                Message = "Session is not usable (build/launch failed or process exited).",
+            };
+        }
+
+        var playerProcess = scope.PlayerProcess!;
+        var commandsDir = scope.CommandsDir;
+        var resultsDir = scope.ResultsDir;
+
+        try
+        {
+            // Execute action pipeline
+            for (int i = 0; i < script.Actions.Count; i++)
+            {
+                var action = script.Actions[i];
+                var evidence = await ExecuteActionAsync(
+                    action, commandsDir, resultsDir, scope.CommandIndex,
+                    new RuntimeRunOptions
+                    {
+                        UnityExecutable = "",
+                        ProjectPath = scope.Session.ProjectPath ?? "/tmp",
+                        CommandTimeoutSeconds = scope.CommandTimeoutSeconds,
+                        PollIntervalMs = scope.PollIntervalMs,
+                    },
+                    playerProcess, cancellationToken);
+
+                scope.CommandIndex++;
+
+                if (evidence != null)
+                {
+                    scope.Session.Evidence.Add(evidence);
+                }
+
+                // Check if process died
+                if (playerProcess.HasExited)
+                {
+                    return new RuntimeSession
+                    {
+                        ProjectPath = scope.Session.ProjectPath ?? "/tmp",
+                        UnityVersion = scope.Session.UnityVersion,
+                        StartedAt = DateTime.UtcNow,
+                        Result = RuntimeResultStatus.ProcessExited,
+                        Message = $"Player exited (code {playerProcess.ExitCode}) during action '{action.ActionId}'.",
+                    };
+                }
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return new RuntimeSession
+                    {
+                        ProjectPath = scope.Session.ProjectPath ?? "/tmp",
+                        UnityVersion = scope.Session.UnityVersion,
+                        StartedAt = DateTime.UtcNow,
+                        Result = RuntimeResultStatus.NotEvaluated,
+                        Message = "Runtime inspection was cancelled.",
+                    };
+                }
+            }
+
+            // Evaluate assertions against accumulated evidence (up to this point)
+            return EvaluateAssertions(
+                scope.Session, script.Assertions, scope.FinalPlayerEvidence);
+        }
+        catch (OperationCanceledException)
+        {
+            return new RuntimeSession
+            {
+                ProjectPath = scope.Session.ProjectPath ?? "/tmp",
+                UnityVersion = scope.Session.UnityVersion,
+                StartedAt = DateTime.UtcNow,
+                Result = RuntimeResultStatus.NotEvaluated,
+                Message = "Runtime inspection was cancelled.",
+            };
+        }
+        catch (Exception ex)
+        {
+            return new RuntimeSession
+            {
+                ProjectPath = scope.Session.ProjectPath ?? "/tmp",
+                UnityVersion = scope.Session.UnityVersion,
+                StartedAt = DateTime.UtcNow,
+                Result = RuntimeResultStatus.NotEvaluated,
+                Message = $"Runtime inspection failed: {ex.Message}",
+            };
+        }
+    }
+
+    /// <summary>
+    /// Finalizes a RuntimeSessionScope: sends Quit command, collects final evidence,
+    /// and waits for the Player process to exit.
+    ///
+    /// After this, scope.IsFinalized = true.
+    /// Caller MUST still call scope.Dispose() for file cleanup.
+    /// </summary>
+    public async Task FinalizeScopeAsync(
+        RuntimeSessionScope scope,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+
+        if (scope.IsFailed || scope.IsFinalized)
+            return;
+
+        var commandsDir = scope.CommandsDir;
+        var resultsDir = scope.ResultsDir;
+
+        // Send Quit command and collect final evidence
+        var commandIndex = scope.CommandIndex;
+        var cmdPath = Path.Combine(commandsDir, $"cmd_{commandIndex}.json");
+        var quitCmd = new RuntimeCommand
+        {
+            Action = "Quit",
+            Params = new Dictionary<string, object>(),
+        };
+        var quitJson = System.Text.Json.JsonSerializer.Serialize(quitCmd, JsonOptions);
+        await File.WriteAllTextAsync(cmdPath, quitJson, cancellationToken);
+
+        // Poll for done marker or evidence file
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline
+            && !scope.PlayerProcess.HasExited
+            && !cancellationToken.IsCancellationRequested)
+        {
+            if (File.Exists(scope.DoneMarker) || File.Exists(scope.EvidenceFile))
+            {
+                scope.FinalPlayerEvidence = TryReadEvidence(scope.EvidenceFile);
+                break;
+            }
+            await Task.Delay(100, cancellationToken);
+        }
+
+        // Wait for process to exit
+        if (!scope.PlayerProcess.HasExited)
+        {
+            SafeWaitExitSync(scope.PlayerProcess, 5000);
+            if (!scope.PlayerProcess.HasExited)
+                KillProcess(scope.PlayerPid);
+        }
+
+        // Add final evidence to session if found
+        if (scope.FinalPlayerEvidence != null)
+        {
+            scope.Session.Evidence.Add(new RuntimeEvidence
+            {
+                Type = "RuntimeEvidenceChain",
+                Expected = "Runtime",
+                Observed = "Runtime",
+                Obtained = true,
+                Message = $"executionMode={scope.FinalPlayerEvidence.ExecutionMode}, " +
+                          $"isEditor={scope.FinalPlayerEvidence.IsEditor}, " +
+                          $"isPlaying={scope.FinalPlayerEvidence.IsPlaying}, " +
+                          $"activeScene={scope.FinalPlayerEvidence.ActiveScene}, " +
+                          $"success={scope.FinalPlayerEvidence.Success}",
+            });
+        }
+
+        scope.IsFinalized = true;
     }
 
     // ══════════════════════════════════════════════════════════════

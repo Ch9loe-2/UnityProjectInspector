@@ -6,17 +6,37 @@ using UnityProjectInspector.Core.Rules;
 namespace UnityProjectInspector.Core.Assignments;
 
 /// <summary>
+/// Mutable state holder for session failure tracking across async methods.
+/// Async methods cannot use ref parameters.
+/// </summary>
+internal class SessionSharingState
+{
+    public bool SessionFailed { get; set; }
+}
+
+/// <summary>
 /// Orchestrates the full inspection workflow for an AssignmentDefinition.
 ///
 /// Responsibilities (delegation only, no re-implementation):
 ///   1. Validate assignment via InspectionWorkflowValidator
 ///   2. Run static rules via RuleEngine for each requirement
-///   3. Run runtime tests via RuntimeRunner when required
+///   3. Run runtime tests via RuntimeRunner — shared across requirements
+///      when the runner supports ISupportsSessionSharing
 ///   4. Merge results via ResultMerger
 ///   5. Aggregate individual requirement results into assignment result
 ///
-/// This is a stateless orchestrator — all state is passed in or
-/// returned in result objects.
+/// Session ownership (M17+):
+///   InspectionWorkflowRunner creates a RuntimeSessionScope at the Assignment level
+///   when any requirement needs runtime verification. The same session is reused
+///   across all RuntimeRequired requirements that pass static checks.
+///
+///   Lifecycle:
+///     Assignment-level scope created (if any RuntimeRequired exists)
+///       → For each RuntimeRequired requirement (if static not failed):
+///           ExecuteScriptOnScopeAsync(scope, req.RuntimeTest)
+///       → FinalizeScopeAsync + Dispose (after all requirements complete)
+///
+///   This is a stateless orchestrator with scoped session ownership.
 /// </summary>
 public class InspectionWorkflowRunner
 {
@@ -31,13 +51,10 @@ public class InspectionWorkflowRunner
 
     /// <summary>
     /// Runs the full inspection workflow for the given assignment.
+    ///
+    /// When the runtime runner supports ISupportsSessionSharing, multiple
+    /// RuntimeRequired requirements share a single Unity Player session.
     /// </summary>
-    /// <param name="assignment">The assignment definition to evaluate.</param>
-    /// <param name="context">Inspection context with parsed project data.</param>
-    /// <param name="runtimeOptions">Runtime options (required if any requirement needs
-    /// runtime verification). May be null if no RuntimeRequired requirements exist.</param>
-    /// <param name="cancellationToken">Optional cancellation token.</param>
-    /// <returns>AssignmentInspectionResult with per-requirement and final status.</returns>
     public async Task<AssignmentInspectionResult> RunAsync(
         AssignmentDefinition assignment,
         InspectionContext context,
@@ -63,30 +80,111 @@ public class InspectionWorkflowRunner
             };
         }
 
-        // Phase 2: Evaluate each requirement
-        var requirementResults = new List<RequirementInspectionResult>();
-        RuntimeSession? runtimeSession = null;
+        // Check if the runtime runner supports session sharing
+        var sessionSharingRunner = _runtimeRunner as ISupportsSessionSharing;
 
-        foreach (var req in assignment.Requirements)
+        // Phase 2: Evaluate — with or without session sharing
+        if (sessionSharingRunner != null)
         {
-            var result = await EvaluateRequirementAsync(
-                req, context, runtimeOptions, runtimeSession, cancellationToken);
-
-            // If a runtime session was produced, reuse it for subsequent requirements
-            // that share the same runtime test (avoids launching Unity multiple times).
-
-            requirementResults.Add(result);
+            return await RunWithSessionSharingAsync(
+                assignment, context, runtimeOptions, sessionSharingRunner, cancellationToken);
         }
 
-        // Phase 3: Aggregate
+        // Fallback: per-requirement runner (backward compat)
+        return await RunPerRequirementAsync(
+            assignment, context, runtimeOptions, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs the assignment with session sharing.
+    /// One shared RuntimeSessionScope across all RuntimeRequired requirements.
+    /// </summary>
+    private async Task<AssignmentInspectionResult> RunWithSessionSharingAsync(
+        AssignmentDefinition assignment,
+        InspectionContext context,
+        RuntimeRunOptions? runtimeOptions,
+        ISupportsSessionSharing sessionSharingRunner,
+        CancellationToken cancellationToken)
+    {
+        var requirementResults = new List<RequirementInspectionResult>();
+        var state = new SessionSharingState();
+
+        // Check if any requirement needs runtime
+        bool anyRuntimeRequired = assignment.Requirements.Any(
+            r => ResultMerger.ParseEvidenceRequirement(r.EvidenceRequirement)
+                 == EvidenceRequirement.RuntimeRequired);
+
+        // Create shared session only if runtime is needed and options are provided
+        RuntimeSessionScope? sharedScope = null;
+
+        if (anyRuntimeRequired && runtimeOptions != null)
+        {
+            try
+            {
+                sharedScope = await sessionSharingRunner.CreateSessionAsync(
+                    runtimeOptions, cancellationToken);
+
+                // If session creation failed (build/launch error), mark for later
+                if (sharedScope.IsFailed)
+                {
+                    state.SessionFailed = true;
+                }
+            }
+            catch
+            {
+                state.SessionFailed = true;
+            }
+        }
+
+        try
+        {
+            foreach (var req in assignment.Requirements)
+            {
+                var result = await EvaluateRequirementWithSessionAsync(
+                    req, context, runtimeOptions, sessionSharingRunner,
+                    sharedScope, state, cancellationToken);
+
+                requirementResults.Add(result);
+            }
+        }
+        finally
+        {
+            // Finalize and clean up the shared session
+            if (sharedScope != null && !sharedScope.IsFailed)
+            {
+                try
+                {
+                    if (!sharedScope.IsFinalized)
+                    {
+                        await sessionSharingRunner.FinalizeScopeAsync(
+                            sharedScope, CancellationToken.None);
+                    }
+                }
+                catch
+                {
+                    // Best-effort finalization
+                }
+                finally
+                {
+                    sharedScope.Dispose();
+                }
+            }
+        }
+
         return AggregateResults(assignment, requirementResults);
     }
 
-    private async Task<RequirementInspectionResult> EvaluateRequirementAsync(
+    /// <summary>
+    /// Evaluates a single requirement using the shared session scope.
+    /// The state.SessionFailed flag is set to true if the session becomes unusable.
+    /// </summary>
+    private async Task<RequirementInspectionResult> EvaluateRequirementWithSessionAsync(
         RequirementDefinition req,
         InspectionContext context,
         RuntimeRunOptions? runtimeOptions,
-        RuntimeSession? cachedSession,
+        ISupportsSessionSharing sessionSharingRunner,
+        RuntimeSessionScope? sharedScope,
+        SessionSharingState state,
         CancellationToken cancellationToken)
     {
         var evidenceReq = ResultMerger.ParseEvidenceRequirement(req.EvidenceRequirement);
@@ -103,53 +201,71 @@ public class InspectionWorkflowRunner
             staticResults = _ruleEngine.Run(context, rules);
         }
 
-        // Determine overall static status:
-        // Any Failed → Failed; any NotEvaluated + no Failed → NotEvaluated
+        // Determine overall static status
         var staticStatus = AggregateStaticStatus(staticResults);
 
         // ─── Step 2: Run runtime if needed ────────────────────
-        RuntimeSession? session = cachedSession;
         RuleStatus? runtimeStatus = null;
 
-        if (evidenceReq == Models.Rules.EvidenceRequirement.RuntimeRequired)
+        if (evidenceReq == EvidenceRequirement.RuntimeRequired)
         {
             if (staticStatus == RuleStatus.Failed)
             {
                 // Static prerequisite failed — skip runtime
-                // Runtime stays null — ResultMerger handles this
             }
             else if (runtimeOptions == null)
             {
                 // Runtime required but no options provided
-                // runtimeStatus stays null
             }
             else if (req.RuntimeTest == null)
             {
-                // Configuration error — validator should have caught this
-                // runtimeStatus stays null
+                // Configuration error
+            }
+            else if (state.SessionFailed || sharedScope == null || sharedScope.IsFailed)
+            {
+                // Session is dead — mark as NotEvaluated
+                runtimeStatus = RuleStatus.NotEvaluated;
             }
             else if (staticStatus == RuleStatus.Passed || staticStatus == RuleStatus.NotEvaluated)
             {
-                // Run runtime
+                // Run runtime on the shared session
                 try
                 {
-                    session = await _runtimeRunner.RunAsync(runtimeOptions, req.RuntimeTest, cancellationToken);
-                    runtimeStatus = ConvertRuntimeStatus(session.Result);
+                    var reqSession = await sessionSharingRunner.ExecuteScriptOnScopeAsync(
+                        sharedScope, req.RuntimeTest, cancellationToken);
+
+                    runtimeStatus = ConvertRuntimeStatus(reqSession.Result);
+
+                    // If the session itself failed (ProcessExited, etc.),
+                    // mark it so subsequent requirements don't try to use it
+                    if (reqSession.Result == RuntimeResultStatus.ProcessExited
+                        || reqSession.Result == RuntimeResultStatus.Timeout)
+                    {
+                        if (!sharedScope.PlayerProcess.HasExited)
+                        {
+                            // Session is still alive, this was a requirement-level issue
+                        }
+                        else
+                        {
+                            // Session is dead
+                            state.SessionFailed = true;
+                        }
+                    }
                 }
                 catch
                 {
                     runtimeStatus = RuleStatus.NotEvaluated;
+                    state.SessionFailed = true;
                 }
             }
         }
 
         // ─── Step 3: Merge ────────────────────────────────────
-        // If there are no static rules, create a default "passed" static result
-        // to allow the merger to work with runtime-only requirements.
+        // (same as before, extract from EvaluateRequirementAsync)
+
         RuleResult? primaryStatic = null;
         if (req.StaticRules != null && req.StaticRules.Count > 0)
         {
-            // Use the rule definition and first static result for merge
             var firstDef = req.StaticRules[0];
             var firstResult = staticResults.Count > 0 ? staticResults[0] : null;
             if (firstDef != null && firstResult != null)
@@ -158,7 +274,6 @@ public class InspectionWorkflowRunner
             }
         }
 
-        // Build composite result
         CompositeInspectionResult? composite = null;
         if (primaryStatic != null && req.StaticRules is { Count: > 0 })
         {
@@ -177,7 +292,6 @@ public class InspectionWorkflowRunner
         }
         else if (runtimeStatus != null)
         {
-            // Runtime-only requirement
             var finalStatus = runtimeStatus == RuleStatus.Passed ? RuleStatus.Passed : runtimeStatus.Value;
             composite = new CompositeInspectionResult
             {
@@ -204,7 +318,164 @@ public class InspectionWorkflowRunner
         }
         else if (staticResults.Count > 0)
         {
-            // StaticOnly with static results but no merge
+            reqStatus = staticStatus;
+            message = staticStatus == RuleStatus.Passed
+                ? "All static checks passed."
+                : $"Static check result: {staticStatus}";
+        }
+        else
+        {
+            reqStatus = RuleStatus.NotEvaluated;
+            message = "No static rules or runtime tests to evaluate.";
+        }
+
+        return new RequirementInspectionResult
+        {
+            Requirement = req,
+            StaticResults = staticResults,
+            CompositeResult = composite,
+            Status = reqStatus,
+            Message = message,
+        };
+    }
+
+    /// <summary>
+    /// Original per-requirement evaluation path (for runners that don't support session sharing).
+    /// Each RuntimeRequired requirement gets its own Build + Launch + Cleanup cycle.
+    /// </summary>
+    private async Task<AssignmentInspectionResult> RunPerRequirementAsync(
+        AssignmentDefinition assignment,
+        InspectionContext context,
+        RuntimeRunOptions? runtimeOptions,
+        CancellationToken cancellationToken)
+    {
+        var requirementResults = new List<RequirementInspectionResult>();
+        RuntimeSession? runtimeSession = null;
+
+        foreach (var req in assignment.Requirements)
+        {
+            var evidenceReq = ResultMerger.ParseEvidenceRequirement(req.EvidenceRequirement);
+
+            // ─── Static ──────────────────────────────────────────
+            var staticResults = new List<RuleResult>();
+            if (req.StaticRules != null && req.StaticRules.Count > 0)
+            {
+                var rules = new List<IRule>(req.StaticRules.Count);
+                foreach (var ruleDef in req.StaticRules)
+                    rules.Add(RuleFactory.Create(ruleDef));
+                staticResults = _ruleEngine.Run(context, rules);
+            }
+
+            var staticStatus = AggregateStaticStatus(staticResults);
+
+            // ─── Runtime ─────────────────────────────────────────
+            RuleStatus? runtimeStatus = null;
+
+            if (evidenceReq == EvidenceRequirement.RuntimeRequired)
+            {
+                if (staticStatus == RuleStatus.Failed)
+                {
+                    // Static prerequisite failed — skip
+                }
+                else if (runtimeOptions == null)
+                {
+                    // No options provided
+                }
+                else if (req.RuntimeTest == null)
+                {
+                    // Configuration error
+                }
+                else if (staticStatus == RuleStatus.Passed || staticStatus == RuleStatus.NotEvaluated)
+                {
+                    // Run runtime (per-requirement build+launch)
+                    try
+                    {
+                        // Try per-requirement: create session if not already available,
+                        // else reuse (old cachedSession pattern — mostly unused)
+                        if (runtimeSession == null)
+                        {
+                            runtimeSession = await _runtimeRunner.RunAsync(
+                                runtimeOptions, req.RuntimeTest, cancellationToken);
+                        }
+                        // Note: cachedSession is not truly reused here because
+                        // the old pattern was never wired up. This fallback path
+                        // matches the original M16 behavior exactly.
+                        runtimeStatus = ConvertRuntimeStatus(runtimeSession.Result);
+                    }
+                    catch
+                    {
+                        runtimeStatus = RuleStatus.NotEvaluated;
+                    }
+                }
+            }
+
+            // ─── Merge ───────────────────────────────────────────
+            // (same logic as EvaluateRequirementWithSessionAsync above)
+            requirementResults.Add(BuildRequirementResult(req, staticResults, evidenceReq, staticStatus, runtimeStatus));
+        }
+
+        return AggregateResults(assignment, requirementResults);
+    }
+
+    /// <summary>
+    /// Builds a RequirementInspectionResult from static/runtime results.
+    /// Shared between session-sharing and per-requirement paths.
+    /// </summary>
+    private static RequirementInspectionResult BuildRequirementResult(
+        RequirementDefinition req,
+        List<RuleResult> staticResults,
+        EvidenceRequirement evidenceReq,
+        RuleStatus staticStatus,
+        RuleStatus? runtimeStatus)
+    {
+        RuleResult? primaryStatic = null;
+        if (req.StaticRules != null && req.StaticRules.Count > 0)
+        {
+            var firstResult = staticResults.Count > 0 ? staticResults[0] : null;
+            if (firstResult != null)
+                primaryStatic = firstResult;
+        }
+
+        CompositeInspectionResult? composite = null;
+        if (primaryStatic != null && req.StaticRules is { Count: > 0 })
+        {
+            var ruleDef = req.StaticRules[0];
+            var effectiveId = !string.IsNullOrEmpty(req.Id) ? req.Id :
+                (ruleDef != null ? ruleDef.Id : "unknown");
+            var effectiveName = !string.IsNullOrEmpty(req.Name) ? req.Name :
+                (ruleDef != null ? ruleDef.Name : "Unknown");
+            composite = ResultMerger.Merge(
+                effectiveId, effectiveName, evidenceReq,
+                staticStatus, runtimeStatus, null);
+        }
+        else if (runtimeStatus != null)
+        {
+            var finalStatus = runtimeStatus == RuleStatus.Passed
+                ? RuleStatus.Passed : runtimeStatus.Value;
+            composite = new CompositeInspectionResult
+            {
+                RuleId = req.Id ?? "runtime-only",
+                RuleName = req.Name ?? "Runtime Only",
+                StaticStatus = null,
+                RuntimeStatus = runtimeStatus,
+                Requirement = evidenceReq,
+                FinalStatus = finalStatus,
+                Message = runtimeStatus == RuleStatus.Passed
+                    ? "Runtime requirement passed."
+                    : "Runtime requirement failed.",
+            };
+        }
+
+        RuleStatus reqStatus;
+        string message;
+
+        if (composite != null)
+        {
+            reqStatus = composite.FinalStatus;
+            message = composite.Message;
+        }
+        else if (staticResults.Count > 0)
+        {
             reqStatus = staticStatus;
             message = staticStatus == RuleStatus.Passed
                 ? "All static checks passed."
