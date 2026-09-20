@@ -222,9 +222,9 @@ public class RuntimeRunnerTests
 
         Assert.Equal(60, options.PlayerTimeoutSeconds);
         Assert.Equal(180, options.BuildTimeoutSeconds);
-        Assert.Equal("M13RuntimePlayer", options.ProductName);
-        Assert.Equal("runtime_evidence.json", options.EvidenceFileName);
-        Assert.Equal("M13_RESULT_DIR", options.ResultDirEnvVar);
+        Assert.Equal("M14RuntimePlayer", options.ProductName);
+        Assert.Equal("evidence.json", options.EvidenceFileName);
+        Assert.Equal("M14_SESSION_DIR", options.SessionDirEnvVar);
     }
 
     // ══════════════════════════════════════════════════════════════

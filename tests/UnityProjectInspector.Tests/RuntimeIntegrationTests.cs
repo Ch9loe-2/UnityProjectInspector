@@ -75,9 +75,9 @@ public class RuntimeIntegrationTests
             ProjectPath = ProjectPath!,
             ProductName = "M12MinimalPlayer",
             BuildMethod = "M12_PlayerBuild.Build",
-            ResultDirEnvVar = "M12_RESULT_DIR",
+            SessionDirEnvVar = "M12_RESULT_DIR",
             EvidenceFileName = "runtime_evidence.json",
-            MarkerFileName = "m12_done.marker",
+            DoneMarkerFileName = "m12_done.marker",
             BuildTimeoutSeconds = 180,
             PlayerTimeoutSeconds = 60,
         };

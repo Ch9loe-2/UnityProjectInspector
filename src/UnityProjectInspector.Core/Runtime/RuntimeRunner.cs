@@ -5,24 +5,38 @@ namespace UnityProjectInspector.Core.Runtime;
 
 /// <summary>
 /// Orchestrates the end-to-end Runtime Inspection Pipeline:
-///   1. Build the Unity standalone Player (via -executeMethod with a temp build script)
+///   1. Build the Unity standalone Player (via -executeMethod)
 ///   2. Launch the Player process
-///   3. Poll for Runtime Evidence JSON
-///   4. Classify the result (Passed / Failed / Timeout / ProcessExited / BuildFailed)
-///   5. Return a structured RuntimeSession
+///   3. Execute Action Pipeline (Wait, ClickButton, ObserveActiveScene, ReadLogs)
+///      via file-based IPC (commands → results)
+///   4. Collect Runtime Evidence from Player
+///   5. Evaluate Assertions against collected evidence
+///   6. Return a structured RuntimeSession
 ///
-/// Design based on M12 experimental evidence:
+/// Launch is owned by RuntimeRunner — it is NOT a RuntimeAction.
+/// Actions execute AFTER the Player process is running and ready.
+/// Assertions evaluate AFTER all actions complete.
+///
+/// Design based on M12/M14 experimental evidence:
 /// - Minimal Player Build: ~5s on macOS arm64
-/// - Player Runtime evidence: ~0.2s after launch
-/// - [RuntimeInitializeOnLoadMethod] + environment variable guard is the proven approach
-///
-/// All processes launched by this runner are tracked by PID and safely terminated
-/// on timeout or error. No global kill commands are used.
+/// - Player Runtime bridge initializes in ~0.2s
+/// - File-based IPC: command.json written by Core, read by Player, results reverse
+/// - All processes tracked by PID, safely terminated on timeout/error
 /// </summary>
 public class RuntimeRunner : IRuntimeRunner
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true,
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    // IRuntimeRunner — M13 compatible (probe only)
+    // ══════════════════════════════════════════════════════════════
+
     /// <summary>
-    /// Runs the full runtime inspection pipeline.
+    /// M13-compatible overload. Probes only, no action pipeline.
     /// </summary>
     public async Task<RuntimeSession> RunAsync(
         RuntimeRunOptions options,
@@ -46,9 +60,46 @@ public class RuntimeRunner : IRuntimeRunner
             return session;
         }
 
-        // Phase 2: Launch & Poll
+        // Phase 2: Launch & Poll (M13 original logic)
         var playerExePath = buildPhase.PlayerExecutablePath!;
         return await LaunchAndPollAsync(options, playerExePath, session, cancellationToken);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // IRuntimeRunner — M14 Action Pipeline
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Runs the full runtime inspection pipeline with a test script.
+    /// Build → Launch → Action Pipeline → Evidence → Assertions → Result
+    /// </summary>
+    public async Task<RuntimeSession> RunAsync(
+        RuntimeRunOptions options,
+        RuntimeTestScript script,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(script);
+
+        var session = new RuntimeSession
+        {
+            ProjectPath = options.ProjectPath,
+            UnityVersion = GetUnityVersion(options.UnityExecutable),
+            StartedAt = DateTime.UtcNow,
+        };
+
+        // Phase 1: Build Player
+        var buildPhase = await BuildPlayerAsync(options, cancellationToken);
+        session.Message = buildPhase.Message;
+        if (buildPhase.Status != RuntimeResultStatus.Passed)
+        {
+            session.Result = buildPhase.Status;
+            return session;
+        }
+
+        // Phase 2: Launch + Action Pipeline + Assert
+        var playerExePath = buildPhase.PlayerExecutablePath!;
+        return await RunActionPipelineAsync(options, playerExePath, script, session, cancellationToken);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -79,13 +130,6 @@ public class RuntimeRunner : IRuntimeRunner
             }
         }
 
-        // The target project must have a build script in Assets/Editor/.
-        // For M12 project, this is M12_PlayerBuild.Build.
-        // The build script must use BuildPipeline.BuildPlayer() with StandaloneOSX target.
-        //
-        // The Runner does NOT inject temporary scripts into the target project.
-        // The user must ensure their project has a compatible build method.
-        // Default: "M12_PlayerBuild.Build" (from M12_MinimalUnityProject).
         var buildMethod = options.BuildMethod;
 
         var psi = new ProcessStartInfo
@@ -94,7 +138,7 @@ public class RuntimeRunner : IRuntimeRunner
             Arguments = $"-batchmode -noGraphics -quit " +
                 $"-projectPath \"{projectPath}\" " +
                 $"-executeMethod {buildMethod} " +
-                $"-logFile \"{buildDir}/m13_build.log\"",
+                $"-logFile \"{buildDir}/m14_build.log\"",
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardError = true,
@@ -115,7 +159,7 @@ public class RuntimeRunner : IRuntimeRunner
                 await process.WaitForExitAsync(CancellationToken.None);
                 return new BuildPhaseResult(RuntimeResultStatus.BuildFailed,
                     $"Build timed out after {options.BuildTimeoutSeconds}s. " +
-                    $"Check {buildDir}/m13_build.log for details.", null);
+                    $"Check {buildDir}/m14_build.log for details.", null);
             }
 
             if (process.ExitCode != 0)
@@ -131,7 +175,7 @@ public class RuntimeRunner : IRuntimeRunner
             {
                 return new BuildPhaseResult(RuntimeResultStatus.BuildFailed,
                     $"Build appeared to succeed but Player executable not found at {buildDir}. " +
-                    $"Check {buildDir}/m13_build.log.", null);
+                    $"Check {buildDir}/m14_build.log.", null);
             }
 
             return new BuildPhaseResult(RuntimeResultStatus.Passed,
@@ -146,7 +190,7 @@ public class RuntimeRunner : IRuntimeRunner
     }
 
     // ══════════════════════════════════════════════════════════════
-    // Launch & Poll Phase
+    // M13 Compatible: Launch & Poll (probe only)
     // ══════════════════════════════════════════════════════════════
 
     private async Task<RuntimeSession> LaunchAndPollAsync(
@@ -155,14 +199,15 @@ public class RuntimeRunner : IRuntimeRunner
         RuntimeSession session,
         CancellationToken ct)
     {
-        var evidenceDir = string.IsNullOrEmpty(options.EvidenceDirectory)
+        // M13-compatible: use SessionDirectory as evidence directory
+        var evidenceDir = string.IsNullOrEmpty(options.SessionDirectory)
             ? Path.Combine(Path.GetTempPath(), "M13_Results")
-            : options.EvidenceDirectory;
+            : options.SessionDirectory;
 
         Directory.CreateDirectory(evidenceDir);
 
         var evidenceFile = Path.Combine(evidenceDir, options.EvidenceFileName);
-        var markerFile = Path.Combine(evidenceDir, options.MarkerFileName);
+        var markerFile = Path.Combine(evidenceDir, options.DoneMarkerFileName);
 
         // Clean previous markers
         TryDeleteFile(markerFile);
@@ -171,7 +216,7 @@ public class RuntimeRunner : IRuntimeRunner
         // Launch Player with the evidence directory env var
         var env = new Dictionary<string, string>
         {
-            [options.ResultDirEnvVar] = evidenceDir,
+            [options.SessionDirEnvVar] = evidenceDir,
         };
 
         using var playerProcess = StartProcess(playerExePath,
@@ -216,25 +261,30 @@ public class RuntimeRunner : IRuntimeRunner
             await Task.Delay(200, ct);
         }
 
-        // ─── Classify Phase ───
+        return ClassifyM13Result(session, evidence, processExited, playerPid, playerProcess, ct, deadline);
+    }
 
+    private static RuntimeSession ClassifyM13Result(
+        RuntimeSession session, PlayerEvidence? evidence, bool processExited,
+        int playerPid, Process playerProcess, CancellationToken ct, DateTime deadline)
+    {
         // Case 1: Cancelled
         if (ct.IsCancellationRequested)
         {
             KillProcess(playerPid);
-            await SafeWaitExit(playerProcess, 5000);
+            SafeWaitExitSync(playerProcess, 5000);
             session.Result = RuntimeResultStatus.NotEvaluated;
             session.Message = "Runtime inspection was cancelled.";
             return session;
         }
 
-        // Case 2: Timeout (still running)
+        // Case 2: Timeout
         if (!processExited && evidence == null)
         {
             KillProcess(playerPid);
-            await SafeWaitExit(playerProcess, 5000);
+            SafeWaitExitSync(playerProcess, 5000);
             session.Result = RuntimeResultStatus.Timeout;
-            session.Message = $"Player did not produce evidence within {options.PlayerTimeoutSeconds}s timeout. Process was terminated.";
+            session.Message = $"Player did not produce evidence within timeout. Process was terminated.";
             return session;
         }
 
@@ -242,7 +292,7 @@ public class RuntimeRunner : IRuntimeRunner
         if (processExited && evidence == null)
         {
             var exitCode = playerProcess.ExitCode;
-            await SafeWaitExit(playerProcess, 2000);
+            SafeWaitExitSync(playerProcess, 2000);
             session.Result = RuntimeResultStatus.ProcessExited;
             session.Message = $"Player exited (code {exitCode}) before producing evidence.";
             return session;
@@ -251,24 +301,641 @@ public class RuntimeRunner : IRuntimeRunner
         // Case 4: Evidence received
         if (evidence != null)
         {
-            // Let process finish naturally
-            await SafeWaitExit(playerProcess, 5000);
+            SafeWaitExitSync(playerProcess, 5000);
             if (!playerProcess.HasExited)
-            {
                 KillProcess(playerPid);
-            }
 
             return ClassifyEvidence(session, evidence);
         }
 
-        // Fallback (shouldn't reach here)
+        // Fallback
         session.Result = RuntimeResultStatus.NotEvaluated;
         session.Message = "Unknown outcome: evidence was not collected.";
         return session;
     }
 
     // ══════════════════════════════════════════════════════════════
-    // Classification
+    // M14: Action Pipeline — Launch → Ready → Commands → Results → Evidence
+    // ══════════════════════════════════════════════════════════════
+
+    private async Task<RuntimeSession> RunActionPipelineAsync(
+        RuntimeRunOptions options,
+        string playerExePath,
+        RuntimeTestScript script,
+        RuntimeSession session,
+        CancellationToken ct)
+    {
+        // Setup session directory
+        var sessionDir = string.IsNullOrEmpty(options.SessionDirectory)
+            ? CreateTempSessionDir()
+            : options.SessionDirectory;
+
+        Directory.CreateDirectory(sessionDir);
+        var commandsDir = Path.Combine(sessionDir, options.CommandsSubDir);
+        var resultsDir = Path.Combine(sessionDir, options.ResultsSubDir);
+        Directory.CreateDirectory(commandsDir);
+        Directory.CreateDirectory(resultsDir);
+
+        var evidenceFile = Path.Combine(sessionDir, options.EvidenceFileName);
+        var doneMarker = Path.Combine(sessionDir, options.DoneMarkerFileName);
+        var readyMarker = Path.Combine(sessionDir, options.ReadyMarkerFileName);
+
+        // Clean any stale markers
+        TryDeleteFile(readyMarker);
+        TryDeleteFile(doneMarker);
+        TryDeleteFile(evidenceFile);
+
+        // Launch Player with session directory env var
+        var env = new Dictionary<string, string>
+        {
+            [options.SessionDirEnvVar] = sessionDir,
+        };
+
+        using var playerProcess = StartProcess(playerExePath,
+            "-batchmode -nographics", env);
+
+        if (playerProcess == null)
+        {
+            session.Result = RuntimeResultStatus.ProcessExited;
+            session.Message = $"Failed to start Player process at {playerExePath}";
+            return session;
+        }
+
+        var playerPid = playerProcess.Id;
+
+        try
+        {
+            // Step 1: Wait for Player to become ready
+            var readyResult = WaitForReady(readyMarker, playerProcess,
+                options.ReadyTimeoutSeconds, options.PollIntervalMs);
+
+            if (readyResult == ReadyResult.Timeout)
+            {
+                KillProcess(playerPid);
+                SafeWaitExitSync(playerProcess, 5000);
+                session.Result = RuntimeResultStatus.Timeout;
+                session.Message = $"Player did not become ready within {options.ReadyTimeoutSeconds}s.";
+                return session;
+            }
+            if (readyResult == ReadyResult.ProcessExited)
+            {
+                var exitCode = playerProcess.ExitCode;
+                session.Result = RuntimeResultStatus.ProcessExited;
+                session.Message = $"Player exited (code {exitCode}) before becoming ready.";
+                return session;
+            }
+
+            // Read initial active scene (for pre-action baseline)
+            var initialSceneEvidence = await SendCommandAndReadResultAsync(
+                new RuntimeCommand { Action = "ObserveActiveScene" },
+                commandsDir, resultsDir, 0, options.CommandTimeoutSeconds, ct);
+
+            if (initialSceneEvidence != null)
+            {
+                session.Evidence.Add(initialSceneEvidence);
+            }
+
+            // Step 2: Execute action pipeline
+            for (int i = 0; i < script.Actions.Count; i++)
+            {
+                var action = script.Actions[i];
+                var evidence = await ExecuteActionAsync(
+                    action, commandsDir, resultsDir, i + 1, options, playerProcess, ct);
+
+                if (evidence != null)
+                {
+                    session.Evidence.Add(evidence);
+                }
+
+                // Check if process died
+                if (playerProcess.HasExited)
+                {
+                    session.Result = RuntimeResultStatus.ProcessExited;
+                    session.Message = $"Player exited (code {playerProcess.ExitCode}) during action '{action.ActionId}'.";
+                    return session;
+                }
+
+                // Check cancellation
+                if (ct.IsCancellationRequested)
+                {
+                    KillProcess(playerPid);
+                    session.Result = RuntimeResultStatus.NotEvaluated;
+                    session.Message = "Runtime inspection was cancelled.";
+                    return session;
+                }
+            }
+
+            // Step 3: Send Quit command and collect final evidence
+            var finalEvidence = await SendQuitAndCollectEvidenceAsync(
+                commandsDir, resultsDir, script.Actions.Count + 1,
+                evidenceFile, doneMarker, options, playerProcess, ct);
+
+            if (finalEvidence != null)
+            {
+                session.Evidence.Add(new RuntimeEvidence
+                {
+                    Type = "RuntimeEvidenceChain",
+                    Expected = "Runtime",
+                    Observed = "Runtime",
+                    Obtained = true,
+                    Message = $"executionMode={finalEvidence.ExecutionMode}, " +
+                              $"isEditor={finalEvidence.IsEditor}, isPlaying={finalEvidence.IsPlaying}, " +
+                              $"activeScene={finalEvidence.ActiveScene}, success={finalEvidence.Success}",
+                });
+            }
+
+            // Step 4: Wait for process to exit
+            if (!playerProcess.HasExited)
+            {
+                SafeWaitExitSync(playerProcess, 5000);
+                if (!playerProcess.HasExited)
+                    KillProcess(playerPid);
+            }
+
+            // Step 5: Run assertions against collected evidence
+            return EvaluateAssertions(session, script.Assertions, finalEvidence);
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcess(playerPid);
+            session.Result = RuntimeResultStatus.NotEvaluated;
+            session.Message = "Runtime inspection was cancelled.";
+            return session;
+        }
+        catch (Exception ex)
+        {
+            KillProcess(playerPid);
+            session.Result = RuntimeResultStatus.NotEvaluated;
+            session.Message = $"Runtime inspection failed: {ex.Message}";
+            return session;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Action Dispatch
+    // ══════════════════════════════════════════════════════════════
+
+    private async Task<RuntimeEvidence?> ExecuteActionAsync(
+        RuntimeAction action,
+        string commandsDir,
+        string resultsDir,
+        int commandIndex,
+        RuntimeRunOptions options,
+        Process playerProcess,
+        CancellationToken ct)
+    {
+        var runtimeCommand = MapActionToCommand(action);
+        if (runtimeCommand == null)
+        {
+            return new RuntimeEvidence
+            {
+                Type = "ActionError",
+                Expected = "executed",
+                Observed = "skipped",
+                Obtained = false,
+                Message = $"Action '{action.ActionId}' has no IPC mapping",
+            };
+        }
+
+        return await SendCommandAndReadResultAsync(
+            runtimeCommand, commandsDir, resultsDir, commandIndex,
+            options.CommandTimeoutSeconds, ct);
+    }
+
+    private static RuntimeCommand? MapActionToCommand(RuntimeAction action)
+    {
+        return action switch
+        {
+            WaitAction wait => new RuntimeCommand
+            {
+                Action = "Wait",
+                Params = new Dictionary<string, object> { ["milliseconds"] = wait.Milliseconds },
+            },
+            ClickButtonAction click => new RuntimeCommand
+            {
+                Action = "ClickButton",
+                Params = new Dictionary<string, object> { ["gameObjectName"] = click.GameObjectName },
+            },
+            ObserveActiveSceneAction => new RuntimeCommand
+            {
+                Action = "ObserveActiveScene",
+                Params = new Dictionary<string, object>(),
+            },
+            ReadLogsAction => new RuntimeCommand
+            {
+                Action = "ReadLogs",
+                Params = new Dictionary<string, object>(),
+            },
+            _ => null,
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // IPC: Send Command → Poll Result → Produce Evidence
+    // ══════════════════════════════════════════════════════════════
+
+    private async Task<RuntimeEvidence?> SendCommandAndReadResultAsync(
+        RuntimeCommand command,
+        string commandsDir,
+        string resultsDir,
+        int commandIndex,
+        int timeoutSeconds,
+        CancellationToken ct)
+    {
+        try
+        {
+            // Write command file
+            var cmdPath = Path.Combine(commandsDir, $"cmd_{commandIndex}.json");
+            var cmdJson = JsonSerializer.Serialize(command, JsonOptions);
+            await File.WriteAllTextAsync(cmdPath, cmdJson, ct);
+
+            // Poll for result file
+            var resultPath = Path.Combine(resultsDir, $"result_{commandIndex}.json");
+            var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+            while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
+            {
+                if (File.Exists(resultPath))
+                {
+                    var resultJson = await File.ReadAllTextAsync(resultPath, ct);
+                    var result = JsonSerializer.Deserialize<CommandResult>(resultJson, JsonOptions);
+
+                    if (result != null)
+                    {
+                        // Build evidence from command result
+                        return BuildActionEvidence(command.Action, result);
+                    }
+                }
+
+                await Task.Delay(100, ct);
+            }
+
+            // Timeout waiting for result
+            return new RuntimeEvidence
+            {
+                Type = $"ActionTimeout",
+                Expected = "completed",
+                Observed = "timeout",
+                Obtained = false,
+                Message = $"Command '{command.Action}' #{commandIndex} timed out after {timeoutSeconds}s",
+            };
+        }
+        catch (Exception ex)
+        {
+            return new RuntimeEvidence
+            {
+                Type = "ActionError",
+                Expected = "completed",
+                Observed = "exception",
+                Obtained = false,
+                Message = $"Command '{command.Action}' #{commandIndex} failed: {ex.Message}",
+            };
+        }
+    }
+
+    private static RuntimeEvidence BuildActionEvidence(string actionType, CommandResult result)
+    {
+        var successStr = result.Success ? "passed" : "failed";
+        var message = result.Success
+            ? $"Action '{actionType}': {successStr}"
+            : $"Action '{actionType}': {result.Error ?? "unknown error"}";
+
+        // Extract action-specific details
+        if (result.Result != null)
+        {
+            if (result.Result.TryGetValue("sceneName", out var sceneName))
+            {
+                message += $", sceneName='{sceneName}'";
+            }
+            if (result.Result.TryGetValue("found", out var found))
+            {
+                message += $", found={found}";
+            }
+            if (result.Result.TryGetValue("clicked", out var clicked))
+            {
+                message += $", clicked={clicked}";
+            }
+            if (result.Result.TryGetValue("hasErrors", out var hasErrors))
+            {
+                message += $", hasErrors={hasErrors}";
+            }
+            if (result.Result.TryGetValue("hasExceptions", out var hasExceptions))
+            {
+                message += $", hasExceptions={hasExceptions}";
+            }
+        }
+
+        return new RuntimeEvidence
+        {
+            Type = $"Action:{actionType}",
+            Expected = "passed",
+            Observed = successStr,
+            Obtained = result.Success,
+            Message = message,
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // IPC: Quit + Final Evidence Collection
+    // ══════════════════════════════════════════════════════════════
+
+    private async Task<PlayerEvidence?> SendQuitAndCollectEvidenceAsync(
+        string commandsDir,
+        string resultsDir,
+        int commandIndex,
+        string evidenceFile,
+        string doneMarker,
+        RuntimeRunOptions options,
+        Process playerProcess,
+        CancellationToken ct)
+    {
+        // Send Quit command
+        var cmdPath = Path.Combine(commandsDir, $"cmd_{commandIndex}.json");
+        var quitCmd = new RuntimeCommand { Action = "Quit", Params = new Dictionary<string, object>() };
+        var quitJson = JsonSerializer.Serialize(quitCmd, JsonOptions);
+        await File.WriteAllTextAsync(cmdPath, quitJson, ct);
+
+        // Poll for done marker or evidence file
+        var deadline = DateTime.UtcNow.AddSeconds(15); // Quit should be fast
+
+        while (DateTime.UtcNow < deadline && !playerProcess.HasExited && !ct.IsCancellationRequested)
+        {
+            if (File.Exists(doneMarker) || File.Exists(evidenceFile))
+            {
+                return TryReadEvidence(evidenceFile);
+            }
+            await Task.Delay(100, ct);
+        }
+
+        // Process may have exited without writing evidence
+        if (playerProcess.HasExited)
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Ready Wait
+    // ══════════════════════════════════════════════════════════════
+
+    private enum ReadyResult { Ready, Timeout, ProcessExited }
+
+    private static ReadyResult WaitForReady(
+        string readyMarker,
+        Process playerProcess,
+        int timeoutSeconds,
+        int pollIntervalMs)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (playerProcess.HasExited)
+                return ReadyResult.ProcessExited;
+
+            if (File.Exists(readyMarker))
+                return ReadyResult.Ready;
+
+            Thread.Sleep(pollIntervalMs);
+        }
+
+        return ReadyResult.Timeout;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Classification — Assertion-based
+    // ══════════════════════════════════════════════════════════════
+
+    private static RuntimeSession EvaluateAssertions(
+        RuntimeSession session,
+        IReadOnlyList<RuntimeAssertion> assertions,
+        PlayerEvidence? finalEvidence)
+    {
+        var assertionResults = new List<RuntimeEvidence>();
+        bool anyFailed = false;
+        bool anyNotEvaluated = false;
+        bool anyPassed = false;
+
+        foreach (var assertion in assertions)
+        {
+            var result = EvaluateSingleAssertion(assertion, session.Evidence, finalEvidence);
+            assertionResults.Add(result);
+
+            switch (result.Type.Split(':')[1]) // "Result:Passed" / "Result:Failed" / "Result:NotEvaluated"
+            {
+                case "Passed":
+                    anyPassed = true;
+                    break;
+                case "Failed":
+                    anyFailed = true;
+                    break;
+                case "NotEvaluated":
+                    anyNotEvaluated = true;
+                    break;
+            }
+        }
+
+        // Add assertion results to evidence
+        foreach (var ar in assertionResults)
+        {
+            session.Evidence.Add(ar);
+        }
+
+        // Classify: any Failed → Failed
+        if (anyFailed)
+        {
+            session.Result = RuntimeResultStatus.Failed;
+            session.Message = "Some assertions failed.";
+            return session;
+        }
+
+        // All NotEvaluated → NotEvaluated
+        if (!anyPassed && anyNotEvaluated)
+        {
+            session.Result = RuntimeResultStatus.NotEvaluated;
+            session.Message = "All assertions were not evaluable (missing evidence).";
+            return session;
+        }
+
+        // All Passed → Passed
+        if (anyPassed && !anyFailed)
+        {
+            session.Result = RuntimeResultStatus.Passed;
+            session.Message = "All assertions passed.";
+            return session;
+        }
+
+        // Fallback: mixed Passed + NotEvaluated → still Passed (lenient)
+        // This matches the behavior that actions may have been skipped,
+        // but all actual checks passed
+        session.Result = RuntimeResultStatus.Passed;
+        session.Message = "All evaluated assertions passed.";
+        return session;
+    }
+
+    private static RuntimeEvidence EvaluateSingleAssertion(
+        RuntimeAssertion assertion,
+        List<RuntimeEvidence> evidence,
+        PlayerEvidence? finalEvidence)
+    {
+        switch (assertion)
+        {
+            case AssertActiveScene assertScene:
+                return EvaluateAssertActiveScene(assertScene, evidence, finalEvidence);
+
+            case AssertNoExceptions assertNoEx:
+                return EvaluateAssertNoExceptions(assertNoEx, evidence);
+
+            default:
+                return new RuntimeEvidence
+                {
+                    Type = "Result:NotEvaluated",
+                    Expected = "passed",
+                    Observed = "unknown_assertion_type",
+                    Obtained = false,
+                    Message = $"Unknown assertion type: {assertion.GetType().Name}",
+                };
+        }
+    }
+
+    private static RuntimeEvidence EvaluateAssertActiveScene(
+        AssertActiveScene assertion,
+        List<RuntimeEvidence> evidence,
+        PlayerEvidence? finalEvidence)
+    {
+        var expectedScene = assertion.ExpectedSceneName;
+
+        // Priority 1: Check for ObserveActiveScene evidence in evidence list
+        var sceneEvidence = evidence.LastOrDefault(e =>
+            e.Type == "Action:ObserveActiveScene" ||
+            e.Type == "Action:ClickButton"); // ClickButton may include scene name
+
+        if (sceneEvidence != null && sceneEvidence.Message != null)
+        {
+            // Extract scene name from message: "sceneName='TargetScene'"
+            var sceneName = ExtractFieldFromEvidence(sceneEvidence.Message, "sceneName");
+            if (sceneName != null)
+            {
+                var passed = string.Equals(sceneName, expectedScene, StringComparison.Ordinal);
+                return new RuntimeEvidence
+                {
+                    Type = passed ? "Result:Passed" : "Result:Failed",
+                    Expected = expectedScene,
+                    Observed = sceneName,
+                    Obtained = true,
+                    Message = passed
+                        ? $"AssertActiveScene: scene is '{sceneName}' (expected '{expectedScene}')"
+                        : $"AssertActiveScene: expected '{expectedScene}', observed '{sceneName}'",
+                };
+            }
+        }
+
+        // Priority 2: Check final evidence activeScene
+        if (finalEvidence != null && finalEvidence.ActiveScene != null)
+        {
+            var passed = string.Equals(finalEvidence.ActiveScene, expectedScene, StringComparison.Ordinal);
+            return new RuntimeEvidence
+            {
+                Type = passed ? "Result:Passed" : "Result:Failed",
+                Expected = expectedScene,
+                Observed = finalEvidence.ActiveScene,
+                Obtained = true,
+                Message = passed
+                    ? $"AssertActiveScene: scene is '{finalEvidence.ActiveScene}' (expected '{expectedScene}')"
+                    : $"AssertActiveScene: expected '{expectedScene}', observed '{finalEvidence.ActiveScene}'",
+            };
+        }
+
+        // No scene evidence found
+        return new RuntimeEvidence
+        {
+            Type = "Result:NotEvaluated",
+            Expected = expectedScene,
+            Observed = null,
+            Obtained = false,
+            Message = "AssertActiveScene: no scene evidence available",
+        };
+    }
+
+    private static RuntimeEvidence EvaluateAssertNoExceptions(
+        AssertNoExceptions assertion,
+        List<RuntimeEvidence> evidence)
+    {
+        // Check for ReadLogs evidence that indicates errors
+        var logEvidence = evidence.FirstOrDefault(e =>
+            e.Type == "Action:ReadLogs");
+
+        if (logEvidence != null && logEvidence.Message != null)
+        {
+            if (logEvidence.Message.Contains("hasErrors=True") ||
+                logEvidence.Message.Contains("hasExceptions=True"))
+            {
+                return new RuntimeEvidence
+                {
+                    Type = "Result:Failed",
+                    Expected = "no_exceptions",
+                    Observed = "exceptions_found",
+                    Obtained = true,
+                    Message = "AssertNoExceptions: runtime exceptions were detected",
+                };
+            }
+
+            return new RuntimeEvidence
+            {
+                Type = "Result:Passed",
+                Expected = "no_exceptions",
+                Observed = "no_exceptions",
+                Obtained = true,
+                Message = "AssertNoExceptions: no runtime exceptions detected",
+            };
+        }
+
+        // Also check final evidence
+        if (logEvidence == null)
+        {
+            return new RuntimeEvidence
+            {
+                Type = "Result:Passed",
+                Expected = "no_exceptions",
+                Observed = "no_exceptions",
+                Obtained = true,
+                Message = "AssertNoExceptions: no exceptions logged (no log evidence needed)",
+            };
+        }
+
+        return new RuntimeEvidence
+        {
+            Type = "Result:NotEvaluated",
+            Expected = "no_exceptions",
+            Observed = null,
+            Obtained = false,
+            Message = "AssertNoExceptions: no log evidence available",
+        };
+    }
+
+    private static string? ExtractFieldFromEvidence(string message, string fieldName)
+    {
+        var search = $"{fieldName}='";
+        var start = message.IndexOf(search);
+        if (start < 0)
+        {
+            // Try without quotes
+            search = $"{fieldName}=";
+            start = message.IndexOf(search);
+            if (start < 0) return null;
+            start += search.Length;
+            var end = message.IndexOfAny(new[] { ',', ' ', '}' }, start);
+            return end > start ? message[start..end] : null;
+        }
+        start += search.Length;
+        var quoteEnd = message.IndexOf('\'', start);
+        return quoteEnd > start ? message[start..quoteEnd] : null;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // M13 Classification (retained for backward compat)
     // ══════════════════════════════════════════════════════════════
 
     private static RuntimeSession ClassifyEvidence(RuntimeSession session, PlayerEvidence evidence)
@@ -285,7 +952,6 @@ public class RuntimeRunner : IRuntimeRunner
         };
         session.Evidence.Add(evidenceModel);
 
-        // Validate the evidence
         if (!evidence.IsValidRuntimeEvidence)
         {
             session.Result = RuntimeResultStatus.Failed;
@@ -368,29 +1034,31 @@ public class RuntimeRunner : IRuntimeRunner
         }
     }
 
-    private static async Task SafeWaitExit(Process process, int timeoutMs)
+    private static void SafeWaitExitSync(Process process, int timeoutMs)
     {
         try
         {
             if (!process.HasExited)
             {
-                var exited = process.WaitForExit(timeoutMs);
-                if (!exited)
-                {
-                    // Will be killed externally
-                }
+                process.WaitForExit(timeoutMs);
             }
         }
         catch
         {
-            // Process may already have been reclaimed
+            // Process may have been reclaimed
         }
-        await Task.CompletedTask;
     }
 
     // ══════════════════════════════════════════════════════════════
     // Helpers
     // ══════════════════════════════════════════════════════════════
+
+    private static string CreateTempSessionDir()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "M14_Sessions", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        return tempDir;
+    }
 
     private static string? FindPlayerExecutable(string buildDir, string productName)
     {

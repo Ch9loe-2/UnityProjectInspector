@@ -3,10 +3,10 @@ namespace UnityProjectInspector.Core.Runtime;
 /// <summary>
 /// Configuration for a single Runtime Runner invocation.
 ///
-/// Based on M12 experimental evidence:
+/// Based on M12/M14 experimental evidence:
 /// - Player Build takes ~5s for a minimal project on macOS
 /// - Player Runtime produces evidence in ~0.2s
-/// - Default timeout of 60s covers both build and runtime phases
+/// - Session directory is used for file-based IPC between Core and Player
 /// </summary>
 public record class RuntimeRunOptions
 {
@@ -36,38 +36,61 @@ public record class RuntimeRunOptions
 
     /// <summary>
     /// Product name for the Player build.
-    /// If not set, defaults to "M13RuntimePlayer".
+    /// If not set, defaults to "M14RuntimePlayer".
     /// </summary>
-    public string ProductName { get; init; } = "M13RuntimePlayer";
+    public string ProductName { get; init; } = "M14RuntimePlayer";
 
     /// <summary>
-    /// Directory where the Player should write runtime evidence JSON.
-    /// If not set, defaults to a temp directory.
+    /// Session directory for file-based IPC between Core and Player.
+    /// Core writes commands here; Player writes results, evidence, and markers.
+    /// If not set, defaults to a unique temp directory.
     /// </summary>
-    public string EvidenceDirectory { get; init; } = string.Empty;
+    public string SessionDirectory { get; init; } = string.Empty;
 
     /// <summary>
-    /// Name of the evidence JSON file the Player produces.
-    /// Default: "runtime_evidence.json"
+    /// Environment variable name used to pass the session directory to the Player.
+    /// Must match the [RuntimeInitializeOnLoadMethod] guard in M14RuntimeBridge.
+    /// Default: "M14_SESSION_DIR"
     /// </summary>
-    public string EvidenceFileName { get; init; } = "runtime_evidence.json";
+    public string SessionDirEnvVar { get; init; } = "M14_SESSION_DIR";
 
     /// <summary>
-    /// Name of the marker file the Player produces to signal completion.
-    /// Default: "m13_done.marker"
+    /// Name of the ready marker file the Player writes when the bridge is initialized.
     /// </summary>
-    public string MarkerFileName { get; init; } = "m13_done.marker";
+    public string ReadyMarkerFileName { get; init; } = "ready.marker";
 
     /// <summary>
-    /// Environment variable name used to pass the evidence directory to the Player.
-    /// Must match the [RuntimeInitializeOnLoadMethod] guard.
-    /// Default: "M13_RESULT_DIR"
+    /// Name of the final evidence JSON file the Player produces.
     /// </summary>
-    public string ResultDirEnvVar { get; init; } = "M13_RESULT_DIR";
+    public string EvidenceFileName { get; init; } = "evidence.json";
 
     /// <summary>
-    /// Maximum time in seconds to wait for the Player to produce evidence.
-    /// Based on M12: Player produces evidence in ~0.2s. Default: 60s.
+    /// Name of the done marker file the Player writes when the session is complete.
+    /// </summary>
+    public string DoneMarkerFileName { get; init; } = "done.marker";
+
+    /// <summary>
+    /// Subdirectory name for commands (relative to SessionDirectory).
+    /// </summary>
+    public string CommandsSubDir { get; init; } = "commands";
+
+    /// <summary>
+    /// Subdirectory name for command results (relative to SessionDirectory).
+    /// </summary>
+    public string ResultsSubDir { get; init; } = "results";
+
+    /// <summary>
+    /// Maximum time in seconds to wait for the Player to become ready (write ready.marker).
+    /// </summary>
+    public int ReadyTimeoutSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// Maximum time in seconds to wait for a single command result from the Player.
+    /// </summary>
+    public int CommandTimeoutSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// Maximum time in seconds to wait for the Player to produce final evidence.
     /// </summary>
     public int PlayerTimeoutSeconds { get; init; } = 60;
 
@@ -76,4 +99,10 @@ public record class RuntimeRunOptions
     /// Based on M12: minimal project builds in ~5s. Default: 180s.
     /// </summary>
     public int BuildTimeoutSeconds { get; init; } = 180;
+
+    /// <summary>
+    /// Poll interval in milliseconds for file-based IPC polling.
+    /// Default: 100ms.
+    /// </summary>
+    public int PollIntervalMs { get; init; } = 100;
 }
