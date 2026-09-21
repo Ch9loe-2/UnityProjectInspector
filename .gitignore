@@ -20,3 +20,17 @@ obj/
 # Build artifacts
 packages/
 *.nupkg
+
+# Excluded project items
+.workbuddy/
+docs/M14_RuntimeFlow_Architecture_Audit.md
+experiments/M11_RuntimeChannel/
+experiments/GenericUnityRuntimeHarness/Library/
+experiments/GenericUnityRuntimeHarness/Build/
+experiments/GenericUnityRuntimeHarness/Temp/
+experiments/GenericUnityRuntimeHarness/Logs/
+experiments/GenericUnityRuntimeHarness/*.log
+experiments/GenericUnityRuntimeHarness/casesensitivetest/
+experiments/GenericUnityRuntimeHarness/UserSettings/
+experiments/GenericUnityRuntimeHarness/*.csproj
+experiments/GenericUnityRuntimeHarness/*.sln

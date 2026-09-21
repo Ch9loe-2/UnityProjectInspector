@@ -30,15 +30,15 @@ public record class RuntimeRunOptions
     /// <summary>
     /// Unity -executeMethod entry point for building the Player.
     /// The target project must have a static method matching this.
-    /// Default: "M12_PlayerBuild.Build" (compatible with M12_MinimalUnityProject).
+    /// Default: "GenericPlayerBuild.Build" (compatible with GenericUnityRuntimeHarness).
     /// </summary>
-    public string BuildMethod { get; init; } = "M12_PlayerBuild.Build";
+    public string BuildMethod { get; init; } = "GenericPlayerBuild.Build";
 
     /// <summary>
     /// Product name for the Player build.
-    /// If not set, defaults to "M14RuntimePlayer".
+    /// If not set, defaults to "RuntimePlayer".
     /// </summary>
-    public string ProductName { get; init; } = "M14RuntimePlayer";
+    public string ProductName { get; init; } = "RuntimePlayer";
 
     /// <summary>
     /// Session directory for file-based IPC between Core and Player.
@@ -49,10 +49,10 @@ public record class RuntimeRunOptions
 
     /// <summary>
     /// Environment variable name used to pass the session directory to the Player.
-    /// Must match the [RuntimeInitializeOnLoadMethod] guard in M14RuntimeBridge.
-    /// Default: "M14_SESSION_DIR"
+    /// Must match the [RuntimeInitializeOnLoadMethod] guard in GenericRuntimeBridge.
+    /// Default: "UNITY_INSPECTOR_SESSION_DIR"
     /// </summary>
-    public string SessionDirEnvVar { get; init; } = "M14_SESSION_DIR";
+    public string SessionDirEnvVar { get; init; } = "UNITY_INSPECTOR_SESSION_DIR";
 
     /// <summary>
     /// Name of the ready marker file the Player writes when the bridge is initialized.
