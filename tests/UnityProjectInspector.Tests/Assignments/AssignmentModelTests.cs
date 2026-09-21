@@ -1,5 +1,6 @@
 using System.Text.Json;
 using UnityProjectInspector.Core.Assignments;
+using UnityProjectInspector.Core.Runtime;
 
 namespace UnityProjectInspector.Tests.Assignments;
 
@@ -10,6 +11,123 @@ namespace UnityProjectInspector.Tests.Assignments;
 public class AssignmentModelTests
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        WriteIndented = true,
+    };
+
+    [Fact]
+    public void RuntimeAction_PolymorphicRoundtrip_WaitAction()
+    {
+        var action = new WaitAction { ActionId = "w1", Milliseconds = 500 };
+        var json = JsonSerializer.Serialize<RuntimeAction>(action, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<RuntimeAction>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<WaitAction>(deserialized);
+        var wait = (WaitAction)deserialized!;
+        Assert.Equal("w1", wait.ActionId);
+        Assert.Equal(500, wait.Milliseconds);
+    }
+
+    [Fact]
+    public void RuntimeAction_PolymorphicRoundtrip_ClickButtonAction()
+    {
+        var action = new ClickButtonAction { ActionId = "click_btn", GameObjectName = "MainMenuButton" };
+        var json = JsonSerializer.Serialize<RuntimeAction>(action, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<RuntimeAction>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<ClickButtonAction>(deserialized);
+        var click = (ClickButtonAction)deserialized!;
+        Assert.Equal("click_btn", click.ActionId);
+        Assert.Equal("MainMenuButton", click.GameObjectName);
+    }
+
+    [Fact]
+    public void RuntimeAction_PolymorphicRoundtrip_ObserveActiveSceneAction()
+    {
+        var action = new ObserveActiveSceneAction { ActionId = "obs_scene" };
+        var json = JsonSerializer.Serialize<RuntimeAction>(action, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<RuntimeAction>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<ObserveActiveSceneAction>(deserialized);
+        var obs = (ObserveActiveSceneAction)deserialized!;
+        Assert.Equal("obs_scene", obs.ActionId);
+    }
+
+    [Fact]
+    public void RuntimeAction_PolymorphicRoundtrip_ReadLogsAction()
+    {
+        var action = new ReadLogsAction { ActionId = "read_logs" };
+        var json = JsonSerializer.Serialize<RuntimeAction>(action, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<RuntimeAction>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<ReadLogsAction>(deserialized);
+    }
+
+    [Fact]
+    public void RuntimeAssertion_PolymorphicRoundtrip_AssertActiveScene()
+    {
+        var assertion = new AssertActiveScene { AssertionId = "a1", ExpectedSceneName = "TargetScene" };
+        var json = JsonSerializer.Serialize<RuntimeAssertion>(assertion, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<RuntimeAssertion>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<AssertActiveScene>(deserialized);
+        var aas = (AssertActiveScene)deserialized!;
+        Assert.Equal("TargetScene", aas.ExpectedSceneName);
+    }
+
+    [Fact]
+    public void RuntimeAssertion_PolymorphicRoundtrip_AssertNoExceptions()
+    {
+        var assertion = new AssertNoExceptions { AssertionId = "a2" };
+        var json = JsonSerializer.Serialize<RuntimeAssertion>(assertion, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<RuntimeAssertion>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.IsType<AssertNoExceptions>(deserialized);
+    }
+
+    [Fact]
+    public void RuntimeTestScript_RoundTrip_WithPolymorphicActionsAndAssertions()
+    {
+        var script = new RuntimeTestScript
+        {
+            Name = "Test Script",
+            Actions = new List<RuntimeAction>
+            {
+                new WaitAction { ActionId = "wait1", Milliseconds = 200 },
+                new ClickButtonAction { ActionId = "click1", GameObjectName = "Btn" },
+                new ObserveActiveSceneAction { ActionId = "obs1" },
+                new ReadLogsAction { ActionId = "log1" },
+            },
+            Assertions = new List<RuntimeAssertion>
+            {
+                new AssertActiveScene { AssertionId = "assert1", ExpectedSceneName = "TargetScene" },
+                new AssertNoExceptions { AssertionId = "assert2" },
+            },
+        };
+
+        var json = JsonSerializer.Serialize(script, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<RuntimeTestScript>(json, JsonOptions);
+
+        Assert.NotNull(deserialized);
+        Assert.Equal("Test Script", deserialized!.Name);
+        Assert.Equal(4, deserialized.Actions.Count);
+        Assert.Equal(2, deserialized.Assertions.Count);
+        Assert.IsType<WaitAction>(deserialized.Actions[0]);
+        Assert.IsType<ClickButtonAction>(deserialized.Actions[1]);
+        Assert.IsType<ObserveActiveSceneAction>(deserialized.Actions[2]);
+        Assert.IsType<ReadLogsAction>(deserialized.Actions[3]);
+        Assert.IsType<AssertActiveScene>(deserialized.Assertions[0]);
+        Assert.IsType<AssertNoExceptions>(deserialized.Assertions[1]);
+    }
+
+    private static readonly JsonSerializerOptions PolymorphicOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,

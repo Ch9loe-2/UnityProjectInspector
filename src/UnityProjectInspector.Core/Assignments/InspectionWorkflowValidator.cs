@@ -131,6 +131,18 @@ public class InspectionWorkflowValidator
                 "This configuration is invalid — runtime cannot be performed."));
         }
 
+        // RuntimeRequired + RuntimeTest has no actions → Error
+        if (evidenceReq == Models.Rules.EvidenceRequirement.RuntimeRequired
+            && req.RuntimeTest != null
+            && (req.RuntimeTest.Actions == null || req.RuntimeTest.Actions.Count == 0))
+        {
+            _issues.Add(new WorkflowIssue(
+                WorkflowIssueSeverity.Error,
+                $"{prefix}.runtimeTest.actions",
+                $"Requirement '{req.Id}' declares RuntimeRequired but its RuntimeTest has no actions. " +
+                "At least one action is needed to produce evidence for assertions."));
+        }
+
         // StaticOnly + RuntimeTest != null = Warning
         if (evidenceReq == Models.Rules.EvidenceRequirement.StaticOnly && req.RuntimeTest != null)
         {

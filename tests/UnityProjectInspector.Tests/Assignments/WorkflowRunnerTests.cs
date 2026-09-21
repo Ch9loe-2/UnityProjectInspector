@@ -426,13 +426,197 @@ public class WorkflowRunnerTests
         Assert.Single(result.RequirementResults);
         Assert.Equal(RuleStatus.Passed, result.RequirementResults[0].Status);
     }
+
+    [Fact]
+    public async Task Run_MultipleStaticRulesOnSingleRequirement()
+    {
+        var context = new InspectionContext
+        {
+            ProjectInfo = new UnityProjectInfo
+            {
+                RootPath = "/tmp/test",
+                Scenes = new List<SceneInfo>
+                {
+                    new SceneInfo { Name = "MainMenu", FilePath = "Assets/Scenes/MainMenu.unity" },
+                    new SceneInfo { Name = "TargetScene", FilePath = "Assets/Scenes/TargetScene.unity" },
+                },
+            },
+        };
+
+        var assignment = new AssignmentDefinition
+        {
+            Id = "test",
+            Name = "Test",
+            Requirements = new List<RequirementDefinition>
+            {
+                new()
+                {
+                    Id = "multi-static",
+                    Name = "Multiple static rules",
+                    EvidenceRequirement = "StaticOnly",
+                    StaticRules = new()
+                    {
+                        new()
+                        {
+                            Id = "scene.mainmenu",
+                            Name = "MainMenu exists",
+                            Type = "SceneExists",
+                            Target = "MainMenu",
+                        },
+                        new()
+                        {
+                            Id = "scene.target",
+                            Name = "TargetScene exists",
+                            Type = "SceneExists",
+                            Target = "TargetScene",
+                        },
+                    },
+                },
+            },
+        };
+
+        var runner = new InspectionWorkflowRunner(_ruleEngine, new NeverCalledRuntimeRunner());
+        var result = await runner.RunAsync(assignment, context);
+
+        Assert.Equal(RuleStatus.Passed, result.FinalStatus);
+        Assert.Single(result.RequirementResults);
+        Assert.Equal(2, result.RequirementResults[0].StaticResults.Count);
+        Assert.Equal(RuleStatus.Passed, result.RequirementResults[0].StaticResults[0].Status);
+        Assert.Equal(RuleStatus.Passed, result.RequirementResults[0].StaticResults[1].Status);
+    }
+
+    [Fact]
+    public async Task Run_StaticOnlyAndRuntimeRequired_MixedAssignment()
+    {
+        var context = new InspectionContext
+        {
+            ProjectInfo = new UnityProjectInfo
+            {
+                RootPath = "/tmp/test",
+                Scenes = new List<SceneInfo>
+                {
+                    new SceneInfo { Name = "MainMenu", FilePath = "Assets/Scenes/MainMenu.unity" },
+                },
+            },
+        };
+
+        var assignment = new AssignmentDefinition
+        {
+            Id = "test-mixed",
+            Name = "Mixed Assignment",
+            Requirements = new List<RequirementDefinition>
+            {
+                new()
+                {
+                    Id = "static-req",
+                    Name = "Static check",
+                    EvidenceRequirement = "StaticOnly",
+                    StaticRules = new()
+                    {
+                        new()
+                        {
+                            Id = "scene.mainmenu",
+                            Name = "MainMenu exists",
+                            Type = "SceneExists",
+                            Target = "MainMenu",
+                        },
+                    },
+                },
+                new()
+                {
+                    Id = "runtime-req",
+                    Name = "Runtime check",
+                    EvidenceRequirement = "RuntimeRequired",
+                    RuntimeTest = new RuntimeTestScript
+                    {
+                        Name = "Test Runtime",
+                        Actions = new() { new WaitAction { ActionId = "w1" } },
+                    },
+                },
+            },
+        };
+
+        var runner = new InspectionWorkflowRunner(_ruleEngine, new FixedResultRuntimeRunner(RuntimeResultStatus.Passed));
+        var options = new RuntimeRunOptions
+        {
+            UnityExecutable = "/fake/unity",
+            ProjectPath = "/fake/project",
+        };
+        var result = await runner.RunAsync(assignment, context, options);
+
+        // StaticOnly Passed, RuntimeRequired (Passed with options) → overall Passed
+        Assert.Equal(RuleStatus.Passed, result.FinalStatus);
+        Assert.Equal(2, result.RequirementResults.Count);
+        Assert.Equal(RuleStatus.Passed, result.RequirementResults[0].Status);
+        Assert.Equal(RuleStatus.Passed, result.RequirementResults[1].Status);
+    }
+
+    [Fact]
+    public async Task Run_MultipleRuntimeRequired_HasRuntimeOptions_ReturnsFinalPassed()
+    {
+        var context = new InspectionContext
+        {
+            ProjectInfo = new UnityProjectInfo
+            {
+                RootPath = "/tmp/test",
+                Scenes = new List<SceneInfo>
+                {
+                    new SceneInfo { Name = "MainMenu", FilePath = "Assets/Scenes/MainMenu.unity" },
+                },
+            },
+        };
+
+        var assignment = new AssignmentDefinition
+        {
+            Id = "test",
+            Name = "Test",
+            Requirements = new List<RequirementDefinition>
+            {
+                new()
+                {
+                    Id = "runtime-1",
+                    Name = "Runtime check 1",
+                    EvidenceRequirement = "RuntimeRequired",
+                    RuntimeTest = new RuntimeTestScript
+                    {
+                        Name = "Test 1",
+                        Actions = new() { new WaitAction { ActionId = "w1" } },
+                    },
+                },
+                new()
+                {
+                    Id = "runtime-2",
+                    Name = "Runtime check 2",
+                    EvidenceRequirement = "RuntimeRequired",
+                    RuntimeTest = new RuntimeTestScript
+                    {
+                        Name = "Test 2",
+                        Actions = new() { new WaitAction { ActionId = "w2" } },
+                    },
+                },
+            },
+        };
+
+        var runner = new InspectionWorkflowRunner(_ruleEngine, new FixedResultRuntimeRunner(RuntimeResultStatus.Passed));
+        var options = new RuntimeRunOptions
+        {
+            UnityExecutable = "/fake/unity",
+            ProjectPath = "/fake/project",
+        };
+        var result = await runner.RunAsync(assignment, context, options);
+
+        Assert.Equal(RuleStatus.Passed, result.FinalStatus);
+        Assert.Equal(2, result.RequirementResults.Count);
+        Assert.Equal(RuleStatus.Passed, result.RequirementResults[0].Status);
+        Assert.Equal(RuleStatus.Passed, result.RequirementResults[1].Status);
+    }
 }
 
 /// <summary>
-/// Mock IRuntimeRunner that should never be called.
-/// Throws if invoked.
-/// </summary>
-public class NeverCalledRuntimeRunner : IRuntimeRunner
+    /// Mock IRuntimeRunner that should never be called.
+    /// Throws if invoked.
+    /// </summary>
+    public class NeverCalledRuntimeRunner : IRuntimeRunner
 {
     public Task<RuntimeSession> RunAsync(RuntimeRunOptions options, CancellationToken cancellationToken = default)
     {

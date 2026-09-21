@@ -198,6 +198,36 @@ public class WorkflowValidatorTests
     }
 
     [Fact]
+    public void Validate_RuntimeRequiredWithEmptyRuntimeTest_ReturnsError()
+    {
+        var assignment = new AssignmentDefinition
+        {
+            Id = "test",
+            Name = "Test",
+            Requirements = new List<RequirementDefinition>
+            {
+                new()
+                {
+                    Id = "runtime-req",
+                    Name = "Runtime Req",
+                    EvidenceRequirement = "RuntimeRequired",
+                    RuntimeTest = new Core.Runtime.RuntimeTestScript
+                    {
+                        Name = "Empty test",
+                        // No actions — empty default list
+                    },
+                },
+            },
+        };
+
+        var issues = _validator.Validate(assignment);
+
+        Assert.Contains(issues, i =>
+            i.Severity == WorkflowIssueSeverity.Error &&
+            i.Message.Contains("no actions"));
+    }
+
+    [Fact]
     public void Validate_EmptyAssignmentName_ReturnsError()
     {
         var assignment = new AssignmentDefinition
