@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace UnityProjectInspector.Core.Runtime;
@@ -448,6 +449,8 @@ public class RuntimeRunner : IRuntimeRunner, ISupportsSessionSharing
 
         using var process = new Process { StartInfo = psi };
         process.Start();
+        var buildStderr = new StringBuilder();
+        StartPipeDrain(process, buildStderr);
         var runnerPid = process.Id;
 
         try
@@ -465,7 +468,7 @@ public class RuntimeRunner : IRuntimeRunner, ISupportsSessionSharing
 
             if (process.ExitCode != 0)
             {
-                var stderr = await process.StandardError.ReadToEndAsync();
+                var stderr = buildStderr.ToString();
                 return new BuildPhaseResult(RuntimeResultStatus.BuildFailed,
                     $"Build failed with exit code {process.ExitCode}. {stderr.Trim()}", null);
             }
@@ -1346,12 +1349,47 @@ public class RuntimeRunner : IRuntimeRunner, ISupportsSessionSharing
 
             var process = new Process { StartInfo = psi };
             process.Start();
+            StartPipeDrain(process);
             return process;
         }
         catch
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Starts asynchronous pipe drain on the process's redirected stdout and stderr.
+    ///
+    /// Without this, the process will block when the OS pipe buffer fills up
+    /// (e.g. Unity Player writing Debug.Log to stdout). The drained data is
+    /// discarded by default — Core does not depend on Player stdout/stderr for evidence.
+    ///
+    /// When a captureStderr StringBuilder is provided, stderr lines are appended
+    /// to it via the ErrorDataReceived event. This is used by BuildPlayerAsync
+    /// to capture stderr output on build failure WITHOUT mixing event-based reads
+    /// with ReadToEndAsync (which causes InvalidOperationException).
+    ///
+    /// Safe to call after process.Start():
+    /// - RedirectStandardOutput/Error must be true
+    /// - Runs on thread pool threads, not the main async flow
+    /// - Automatically ends when the process exits
+    /// - No CancellationToken needed (pipe reads complete on process exit)
+    /// </summary>
+    internal static void StartPipeDrain(Process process, StringBuilder? captureStderr = null)
+    {
+        process.OutputDataReceived += (_, _) => { };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null && captureStderr != null)
+            {
+                if (captureStderr.Length > 0)
+                    captureStderr.Append('\n');
+                captureStderr.Append(e.Data);
+            }
+        };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
     }
 
     private static void SafeWaitExitSync(Process process, int timeoutMs)

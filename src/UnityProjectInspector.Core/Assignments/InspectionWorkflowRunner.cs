@@ -42,11 +42,16 @@ public class InspectionWorkflowRunner
 {
     private readonly RuleEngine _ruleEngine;
     private readonly IRuntimeRunner _runtimeRunner;
+    private readonly HarnessDeployer? _harnessDeployer;
 
-    public InspectionWorkflowRunner(RuleEngine ruleEngine, IRuntimeRunner runtimeRunner)
+    public InspectionWorkflowRunner(
+        RuleEngine ruleEngine,
+        IRuntimeRunner runtimeRunner,
+        HarnessDeployer? harnessDeployer = null)
     {
         _ruleEngine = ruleEngine ?? throw new ArgumentNullException(nameof(ruleEngine));
         _runtimeRunner = runtimeRunner ?? throw new ArgumentNullException(nameof(runtimeRunner));
+        _harnessDeployer = harnessDeployer;
     }
 
     /// <summary>
@@ -80,19 +85,43 @@ public class InspectionWorkflowRunner
             };
         }
 
-        // Check if the runtime runner supports session sharing
-        var sessionSharingRunner = _runtimeRunner as ISupportsSessionSharing;
+        // Phase 2: Deploy Harness (if HarnessDeployer is configured AND runtime is needed)
+        bool anyRuntimeRequired = assignment.Requirements.Any(
+            r => ResultMerger.ParseEvidenceRequirement(r.EvidenceRequirement)
+                 == EvidenceRequirement.RuntimeRequired);
 
-        // Phase 2: Evaluate — with or without session sharing
-        if (sessionSharingRunner != null)
+        HarnessSnapshot? harnessSnapshot = null;
+
+        if (_harnessDeployer != null && runtimeOptions != null && anyRuntimeRequired)
         {
-            return await RunWithSessionSharingAsync(
-                assignment, context, runtimeOptions, sessionSharingRunner, cancellationToken);
+            harnessSnapshot = await _harnessDeployer.DeployAsync(runtimeOptions);
         }
 
-        // Fallback: per-requirement runner (backward compat)
-        return await RunPerRequirementAsync(
-            assignment, context, runtimeOptions, cancellationToken);
+        try
+        {
+            // Check if the runtime runner supports session sharing
+            var sessionSharingRunner = _runtimeRunner as ISupportsSessionSharing;
+
+            // Phase 3: Evaluate — with or without session sharing
+            if (sessionSharingRunner != null)
+            {
+                return await RunWithSessionSharingAsync(
+                    assignment, context, runtimeOptions, sessionSharingRunner, cancellationToken);
+            }
+
+            // Fallback: per-requirement runner (backward compat)
+            return await RunPerRequirementAsync(
+                assignment, context, runtimeOptions, cancellationToken);
+        }
+        finally
+        {
+            // Guaranteed cleanup: remove deployed harness files
+            if (harnessSnapshot != null && _harnessDeployer != null && runtimeOptions != null)
+            {
+                // CleanupAsync does not throw — logs warnings on failure
+                await _harnessDeployer.CleanupAsync(harnessSnapshot, runtimeOptions);
+            }
+        }
     }
 
     /// <summary>
@@ -206,6 +235,8 @@ public class InspectionWorkflowRunner
 
         // ─── Step 2: Run runtime if needed ────────────────────
         RuleStatus? runtimeStatus = null;
+        RuntimeResultStatus? runtimeResultDetail = null;
+        string? runtimeMessage = null;
 
         if (evidenceReq == EvidenceRequirement.RuntimeRequired)
         {
@@ -225,6 +256,11 @@ public class InspectionWorkflowRunner
             {
                 // Session is dead — mark as NotEvaluated
                 runtimeStatus = RuleStatus.NotEvaluated;
+                if (sharedScope != null)
+                {
+                    runtimeResultDetail = sharedScope.Session.Result;
+                    runtimeMessage = sharedScope.Session.Message;
+                }
             }
             else if (staticStatus == RuleStatus.Passed || staticStatus == RuleStatus.NotEvaluated)
             {
@@ -235,6 +271,8 @@ public class InspectionWorkflowRunner
                         sharedScope, req.RuntimeTest, cancellationToken);
 
                     runtimeStatus = ConvertRuntimeStatus(reqSession.Result);
+                    runtimeResultDetail = reqSession.Result;
+                    runtimeMessage = reqSession.Message;
 
                     // If the session itself failed (ProcessExited, etc.),
                     // mark it so subsequent requirements don't try to use it
@@ -288,7 +326,9 @@ public class InspectionWorkflowRunner
                 evidenceReq,
                 staticStatus,
                 runtimeStatus,
-                null);
+                null,
+                runtimeResultDetail,
+                runtimeMessage);
         }
         else if (runtimeStatus != null)
         {
@@ -299,6 +339,8 @@ public class InspectionWorkflowRunner
                 RuleName = req.Name ?? "Runtime Only",
                 StaticStatus = null,
                 RuntimeStatus = runtimeStatus,
+                RuntimeResultDetail = runtimeResultDetail,
+                RuntimeMessage = runtimeMessage,
                 Requirement = evidenceReq,
                 FinalStatus = finalStatus,
                 Message = runtimeStatus == RuleStatus.Passed
@@ -370,6 +412,8 @@ public class InspectionWorkflowRunner
 
             // ─── Runtime ─────────────────────────────────────────
             RuleStatus? runtimeStatus = null;
+            RuntimeResultStatus? runtimeResultDetail = null;
+            string? runtimeMessage = null;
 
             if (evidenceReq == EvidenceRequirement.RuntimeRequired)
             {
@@ -401,6 +445,8 @@ public class InspectionWorkflowRunner
                         // the old pattern was never wired up. This fallback path
                         // matches the original M16 behavior exactly.
                         runtimeStatus = ConvertRuntimeStatus(runtimeSession.Result);
+                        runtimeResultDetail = runtimeSession.Result;
+                        runtimeMessage = runtimeSession.Message;
                     }
                     catch
                     {
@@ -411,7 +457,7 @@ public class InspectionWorkflowRunner
 
             // ─── Merge ───────────────────────────────────────────
             // (same logic as EvaluateRequirementWithSessionAsync above)
-            requirementResults.Add(BuildRequirementResult(req, staticResults, evidenceReq, staticStatus, runtimeStatus));
+            requirementResults.Add(BuildRequirementResult(req, staticResults, evidenceReq, staticStatus, runtimeStatus, runtimeResultDetail, runtimeMessage));
         }
 
         return AggregateResults(assignment, requirementResults);
@@ -426,7 +472,9 @@ public class InspectionWorkflowRunner
         List<RuleResult> staticResults,
         EvidenceRequirement evidenceReq,
         RuleStatus staticStatus,
-        RuleStatus? runtimeStatus)
+        RuleStatus? runtimeStatus,
+        RuntimeResultStatus? runtimeResultDetail = null,
+        string? runtimeMessage = null)
     {
         RuleResult? primaryStatic = null;
         if (req.StaticRules != null && req.StaticRules.Count > 0)
@@ -446,7 +494,8 @@ public class InspectionWorkflowRunner
                 (ruleDef != null ? ruleDef.Name : "Unknown");
             composite = ResultMerger.Merge(
                 effectiveId, effectiveName, evidenceReq,
-                staticStatus, runtimeStatus, null);
+                staticStatus, runtimeStatus, null,
+                runtimeResultDetail, runtimeMessage);
         }
         else if (runtimeStatus != null)
         {
@@ -458,6 +507,8 @@ public class InspectionWorkflowRunner
                 RuleName = req.Name ?? "Runtime Only",
                 StaticStatus = null,
                 RuntimeStatus = runtimeStatus,
+                RuntimeResultDetail = runtimeResultDetail,
+                RuntimeMessage = runtimeMessage,
                 Requirement = evidenceReq,
                 FinalStatus = finalStatus,
                 Message = runtimeStatus == RuleStatus.Passed

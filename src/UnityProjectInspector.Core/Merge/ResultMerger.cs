@@ -83,7 +83,9 @@ public static class ResultMerger
         EvidenceRequirement requirement,
         RuleStatus staticStatus,
         RuleStatus? runtimeStatus,
-        string? customMessage = null)
+        string? customMessage = null,
+        RuntimeResultStatus? runtimeResultDetail = null,
+        string? runtimeMessage = null)
     {
         var (finalStatus, message) = MergeStatuses(
             staticStatus, runtimeStatus, requirement);
@@ -94,6 +96,8 @@ public static class ResultMerger
             RuleName = ruleName,
             StaticStatus = staticStatus,
             RuntimeStatus = runtimeStatus,
+            RuntimeResultDetail = runtimeResultDetail,
+            RuntimeMessage = runtimeMessage,
             Requirement = requirement,
             FinalStatus = finalStatus,
             Message = customMessage ?? message,

@@ -1,4 +1,5 @@
 using UnityProjectInspector.Core.Models.Rules;
+using UnityProjectInspector.Core.Runtime;
 
 namespace UnityProjectInspector.Core.Merge;
 
@@ -53,6 +54,24 @@ public class CompositeInspectionResult
     /// Includes details about the merge decision.
     /// </summary>
     public required string Message { get; init; }
+
+    /// <summary>
+    /// The raw RuntimeResultStatus from the RuntimeSession, if available.
+    /// Preserves the original runtime diagnostic (ProcessExited, Timeout, BuildFailed, etc.)
+    /// that is otherwise lost when ConvertRuntimeStatus maps it to RuleStatus.NotEvaluated.
+    ///
+    /// null if no runtime session was performed.
+    /// </summary>
+    public RuntimeResultStatus? RuntimeResultDetail { get; init; }
+
+    /// <summary>
+    /// The original message from the RuntimeSession, if available.
+    /// Contains human-readable diagnostics from the runtime execution
+    /// (e.g. exit code, timeout description, exception message).
+    ///
+    /// null if no runtime session was performed or no message was captured.
+    /// </summary>
+    public string? RuntimeMessage { get; init; }
 
     public override string ToString()
         => $"[{FinalStatus}] {RuleId}: {Message}";

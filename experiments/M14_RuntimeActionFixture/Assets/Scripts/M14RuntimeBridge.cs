@@ -339,30 +339,34 @@ public class M14RuntimeBridge : MonoBehaviour
 
             if (data != null)
             {
+                // Nest action-specific fields under "result":{} so Core CommandResult.Result
+                // deserializes them correctly (CommandResult expects nested result dict).
+                var resultParts = new System.Collections.Generic.List<string>();
                 foreach (var kv in data)
                 {
                     switch (kv.Key)
                     {
                         case "sceneName":
-                            jsonParts.Add("\"sceneName\":\"" + EscapeJson(kv.Value?.ToString() ?? "") + "\"");
+                            resultParts.Add("\"sceneName\":\"" + EscapeJson(kv.Value?.ToString() ?? "") + "\"");
                             break;
                         case "found":
-                            jsonParts.Add("\"found\":" + ((kv.Value is bool fb && fb) ? "true" : "false"));
+                            resultParts.Add("\"found\":" + ((kv.Value is bool fb && fb) ? "true" : "false"));
                             break;
                         case "clicked":
-                            jsonParts.Add("\"clicked\":" + ((kv.Value is bool cb && cb) ? "true" : "false"));
+                            resultParts.Add("\"clicked\":" + ((kv.Value is bool cb && cb) ? "true" : "false"));
                             break;
                         case "hasErrors":
-                            jsonParts.Add("\"hasErrors\":" + ((kv.Value is bool eb && eb) ? "true" : "false"));
+                            resultParts.Add("\"hasErrors\":" + ((kv.Value is bool eb && eb) ? "true" : "false"));
                             break;
                         case "hasExceptions":
-                            jsonParts.Add("\"hasExceptions\":" + ((kv.Value is bool exb && exb) ? "true" : "false"));
+                            resultParts.Add("\"hasExceptions\":" + ((kv.Value is bool exb && exb) ? "true" : "false"));
                             break;
                         case "logCount":
-                            jsonParts.Add("\"logCount\":" + (kv.Value is int iv ? iv.ToString() : "0"));
+                            resultParts.Add("\"logCount\":" + (kv.Value is int iv ? iv.ToString() : "0"));
                             break;
                     }
                 }
+                jsonParts.Add("\"result\":{" + string.Join(",", resultParts.ToArray()) + "}");
             }
 
             var json = "{" + string.Join(",", jsonParts.ToArray()) + "}";
