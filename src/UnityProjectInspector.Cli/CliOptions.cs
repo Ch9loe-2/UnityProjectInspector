@@ -20,4 +20,10 @@ public class CliOptions
 
     /// <summary>Output format: "text" or "json" (default: "text").</summary>
     public string Format { get; init; } = "text";
+
+    /// <summary>
+    /// When true, unexpected internal errors print the full exception stack trace.
+    /// By default (false) the CLI stays productized and only shows a clean message.
+    /// </summary>
+    public bool Debug { get; init; }
 }

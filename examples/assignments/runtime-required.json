@@ -1,0 +1,53 @@
+{
+  "id": "example-runtime-required",
+  "name": "Runtime-Required Example Assignment",
+  "description": "Static scene check plus runtime verification that the correct scene is active when the Unity Player starts. Requires a Unity Editor to build and launch a temporary Player.",
+  "requirements": [
+    {
+      "id": "scene-exists",
+      "name": "Required scene exists",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.training.exists",
+          "name": "TrainingScene exists",
+          "type": "SceneExists",
+          "target": "TrainingScene",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "runtime-active-scene",
+      "name": "Active scene at runtime",
+      "evidenceRequirement": "RuntimeRequired",
+      "staticRules": [
+        {
+          "id": "scene.training.exists.runtime",
+          "name": "TrainingScene exists (runtime req)",
+          "type": "SceneExists",
+          "target": "TrainingScene",
+          "severity": "Error"
+        }
+      ],
+      "runtimeTest": {
+        "name": "Verify the TrainingScene is active on Player start",
+        "actions": [
+          {
+            "$type": "ObserveActiveScene",
+            "actionId": "observe_scene",
+            "description": "Observe the currently active scene"
+          }
+        ],
+        "assertions": [
+          {
+            "$type": "AssertActiveScene",
+            "assertionId": "assert_scene",
+            "description": "The active scene should be TrainingScene",
+            "expectedSceneName": "TrainingScene"
+          }
+        ]
+      }
+    }
+  ]
+}

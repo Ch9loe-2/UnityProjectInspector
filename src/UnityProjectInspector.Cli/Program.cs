@@ -17,7 +17,16 @@ namespace UnityProjectInspector.Cli;
 ///   Core (InspectionWorkflowRunner / RuleEngine / RuntimeRunner)
 ///
 /// This file is the only "product entry point" — the thin CLI layer
-/// that translates user input into Core API calls.
+/// that translates user input into Core API calls. The CLI is responsible for:
+///   - argument parsing
+///   - file reading
+///   - input format validation (front-door, before Core)
+///   - calling Core
+///   - result formatting
+///   - exit code
+///
+/// It deliberately does NOT replicate Core business logic (RuleEngine,
+/// InspectionWorkflowValidator, RuntimeRunner, HarnessDeployer, ResultMerger).
 /// </summary>
 public static class Program
 {
@@ -29,6 +38,34 @@ public static class Program
     internal static readonly string RepoRoot = ResolveRepoRoot();
 
     public static async Task<int> Main(string[] args)
+    {
+        try
+        {
+            return await RunAsync(args);
+        }
+        catch (Exception ex)
+        {
+            // Global guard: never leak a raw stack trace to a normal user.
+            // With --debug, the full exception is shown for diagnosis.
+            await Console.Error.WriteLineAsync(
+                "Error: An unexpected internal error occurred during inspection.");
+
+            if (HasDebugFlag(args))
+            {
+                await Console.Error.WriteLineAsync(ex.ToString());
+            }
+            else
+            {
+                await Console.Error.WriteLineAsync($"  {ex.Message}");
+                await Console.Error.WriteLineAsync(
+                    "  Re-run with --debug for full technical details.");
+            }
+
+            return (int)CliExitCode.InternalError;
+        }
+    }
+
+    private static async Task<int> RunAsync(string[] args)
     {
         // ─── Phase 1: Parse arguments ────────────────────────────
         var (command, options, helpRequested, parseError) = CliArgumentParser.Parse(args);
@@ -75,7 +112,15 @@ public static class Program
         }
         catch (JsonException ex)
         {
-            await Console.Error.WriteLineAsync($"Error: Invalid assignment JSON: {ex.Message}");
+            // Keep the first line of STJ's message — it is already human-readable
+            // (e.g. "The JSON value could not be converted to ...") without the stack.
+            var firstLine = ex.Message.Split('\n')[0].Trim();
+            await Console.Error.WriteLineAsync($"Error: Assignment JSON is not valid: {firstLine}");
+            return (int)CliExitCode.InvalidInput;
+        }
+        catch (InvalidOperationException ex)
+        {
+            await Console.Error.WriteLineAsync($"Error: {ex.Message}");
             return (int)CliExitCode.InvalidInput;
         }
         catch (Exception ex)
@@ -84,7 +129,21 @@ public static class Program
             return (int)CliExitCode.InvalidInput;
         }
 
-        // ─── Phase 4: Validate assignment ────────────────────────
+        // ─── Phase 3.5: CLI structural validation (front-door) ───
+        // Catches obviously-illegal configs (e.g. empty requirements) that Core's
+        // validator does not reject, before we invoke the inspection pipeline.
+        var cliIssues = CliInputValidator.ValidateAssignment(assignment);
+        if (cliIssues.Count > 0)
+        {
+            await Console.Error.WriteLineAsync("Error: Assignment configuration is invalid:");
+            foreach (var issue in cliIssues)
+            {
+                await Console.Error.WriteLineAsync($"  - {issue}");
+            }
+            return (int)CliExitCode.InvalidInput;
+        }
+
+        // ─── Phase 4: Validate assignment (Core business rules) ──
         var validator = new InspectionWorkflowValidator();
         var issues = validator.Validate(assignment);
         var errors = issues.Where(i => i.Severity == WorkflowIssueSeverity.Error).ToList();
@@ -237,13 +296,7 @@ public static class Program
         }
 
         // ─── Phase 9: Exit code ──────────────────────────────────
-        return coreResult.FinalStatus switch
-        {
-            RuleStatus.Passed => (int)CliExitCode.Passed,
-            RuleStatus.Failed => (int)CliExitCode.Failed,
-            RuleStatus.NotEvaluated => (int)CliExitCode.RuntimeError,
-            _ => (int)CliExitCode.InternalError,
-        };
+        return (int)CliResultMapping.FromFinalStatus(coreResult.FinalStatus);
     }
 
     /// <summary>
@@ -344,5 +397,19 @@ public static class Program
 
         // Fallback: current directory
         return Directory.GetCurrentDirectory();
+    }
+
+    /// <summary>
+    /// Detects whether the user requested verbose diagnostics (--debug / --verbose).
+    /// Used by the global exception guard so internal errors stay clean by default.
+    /// </summary>
+    private static bool HasDebugFlag(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (arg == "--debug" || arg == "-d" || arg == "--verbose" || arg == "-v")
+                return true;
+        }
+        return false;
     }
 }

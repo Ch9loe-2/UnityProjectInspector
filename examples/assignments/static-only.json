@@ -1,0 +1,21 @@
+{
+  "id": "example-static-only",
+  "name": "Static-Only Example Assignment",
+  "description": "Verifies that a Unity project contains the required scene(s) using static analysis only. No Unity Player / runtime is launched.",
+  "requirements": [
+    {
+      "id": "scene-exists",
+      "name": "Required scene exists",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.training.exists",
+          "name": "TrainingScene exists",
+          "type": "SceneExists",
+          "target": "TrainingScene",
+          "severity": "Error"
+        }
+      ]
+    }
+  ]
+}

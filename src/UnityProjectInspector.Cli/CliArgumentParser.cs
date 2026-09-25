@@ -21,6 +21,7 @@ Options:
   --unity <path>        Unity Editor executable path (optional, auto-detect)
   --output <path>       Output directory (optional, default: current directory)
   --format <format>     Output format: text | json (optional, default: text)
+  --debug               Show full error details on internal failures (optional)
   --help                Show this help
 
 Examples:
@@ -72,6 +73,7 @@ Examples:
         string? unityPath = null;
         string? outputDir = null;
         string? format = null;
+        bool debug = false;
 
         for (int i = 0; i < remaining.Count; i++)
         {
@@ -125,6 +127,10 @@ Examples:
                 case "--format":
                     format = value;
                     break;
+                case "--debug":
+                case "--verbose":
+                    debug = true;
+                    break;
                 default:
                     return (command, null, false, $"Unknown option: {key}. Use --help for usage information.");
             }
@@ -147,6 +153,7 @@ Examples:
             UnityExecutable = unityPath,
             OutputDirectory = outputDir ?? ".",
             Format = format ?? "text",
+            Debug = debug,
         };
 
         return (command ?? "inspect", options, false, null);
