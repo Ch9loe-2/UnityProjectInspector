@@ -1,0 +1,114 @@
+{
+  "id": "2dmaze-demo",
+  "name": "2DMaze — Comprehensive Demo",
+  "description": "A multi-layer static analysis demo for the real 2DMaze Unity project. Demonstrates SceneExists (3 scenes), GameObjectExists (Player/End/StartButton across different scenes), ComponentExists (Camera on Main Camera, Button on StartButton, Canvas on Canvas), and FileExists for key project files. All checks are StaticOnly and require no Unity Editor. Designed to exit 0 against a complete 2DMaze project.",
+  "requirements": [
+    {
+      "id": "all-scenes-present",
+      "name": "All three game scenes must exist",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.main-menu",
+          "name": "Main menu scene (Main)",
+          "type": "SceneExists",
+          "target": "Main",
+          "severity": "Error"
+        },
+        {
+          "id": "scene.level-2d",
+          "name": "2D maze level (Level)",
+          "type": "SceneExists",
+          "target": "Level",
+          "severity": "Error"
+        },
+        {
+          "id": "scene.level-3d",
+          "name": "3D maze level (level2)",
+          "type": "SceneExists",
+          "target": "level2",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "key-gameobjects",
+      "name": "Key GameObjects in the correct scenes",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "go.player-2d",
+          "name": "Player GameObject exists in Level scene",
+          "type": "GameObjectExists",
+          "target": "Player",
+          "severity": "Error"
+        },
+        {
+          "id": "go.end",
+          "name": "End GameObject exists in Level scene",
+          "type": "GameObjectExists",
+          "target": "End",
+          "severity": "Error"
+        },
+        {
+          "id": "go.startbutton",
+          "name": "StartButton exists in Main scene",
+          "type": "GameObjectExists",
+          "target": "StartButton",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "key-components",
+      "name": "Important components on key objects",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "comp.camera",
+          "name": "Main Camera has Camera component",
+          "type": "ComponentExists",
+          "target": "Main Camera",
+          "expectedClass": "Camera",
+          "severity": "Error"
+        },
+        {
+          "id": "comp.canvas",
+          "name": "Canvas has Canvas component",
+          "type": "ComponentExists",
+          "target": "Canvas",
+          "expectedClass": "Canvas",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "key-scripts-exist",
+      "name": "Key C# script files exist in the project",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "file.playermove",
+          "name": "PlayerMove.cs exists",
+          "type": "FileExists",
+          "target": "Assets/Scripts/PlayerMove.cs",
+          "severity": "Error"
+        },
+        {
+          "id": "file.startbtn",
+          "name": "StartBtn.cs exists",
+          "type": "FileExists",
+          "target": "Assets/Scripts/StartBtn.cs",
+          "severity": "Error"
+        },
+        {
+          "id": "file.endevent",
+          "name": "EndEvent.cs exists",
+          "type": "FileExists",
+          "target": "Assets/Scripts/EndEvent.cs",
+          "severity": "Error"
+        }
+      ]
+    }
+  ]
+}

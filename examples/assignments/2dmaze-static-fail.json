@@ -1,0 +1,49 @@
+{
+  "id": "2dmaze-static-fail",
+  "name": "2DMaze Static Check — FAIL Expected",
+  "description": "A static-only assignment that deliberately requires items that do not exist in the 2DMaze project: a missing scene, a missing GameObject, and a missing script file. Intentionally fails with exit code 1 to demonstrate that the inspector correctly identifies different types of missing requirements — SceneExists, GameObjectExists, and FileExists.",
+  "requirements": [
+    {
+      "id": "missing-scene",
+      "name": "Nonexistent scene is correctly rejected",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.bosslevel",
+          "name": "BossLevel scene does not exist",
+          "type": "SceneExists",
+          "target": "BossLevel",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "missing-gameobject",
+      "name": "Nonexistent GameObject is correctly rejected",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "go.secretroom",
+          "name": "SecretRoom does not exist in any scene",
+          "type": "GameObjectExists",
+          "target": "SecretRoom",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "missing-file",
+      "name": "Nonexistent script file is correctly rejected",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "file.bossfight",
+          "name": "BossFight.cs does not exist",
+          "type": "FileExists",
+          "target": "Assets/Scripts/BossFight.cs",
+          "severity": "Error"
+        }
+      ]
+    }
+  ]
+}

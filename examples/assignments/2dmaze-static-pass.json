@@ -1,0 +1,70 @@
+{
+  "id": "2dmaze-static-pass",
+  "name": "2DMaze Static Check — PASS Expected",
+  "description": "A static-only assignment designed for the real 2DMaze Unity project at /Users/tangluyi/Documents/Unity/JZU/2DMaze. Verifies that expected scene files and key script files exist. This assignment should exit with code 0 against a complete 2DMaze project.",
+  "requirements": [
+    {
+      "id": "scenes-exist",
+      "name": "All game scenes exist",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.main",
+          "name": "Main menu scene (Main.unity)",
+          "type": "SceneExists",
+          "target": "Main",
+          "severity": "Error"
+        },
+        {
+          "id": "scene.level",
+          "name": "2D maze level scene (Level.unity)",
+          "type": "SceneExists",
+          "target": "Level",
+          "severity": "Error"
+        },
+        {
+          "id": "scene.level2",
+          "name": "3D maze level scene (level2.unity)",
+          "type": "SceneExists",
+          "target": "level2",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "key-files-exist",
+      "name": "Key project files exist",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "file.projectversion",
+          "name": "ProjectVersion.txt exists",
+          "type": "FileExists",
+          "target": "ProjectSettings/ProjectVersion.txt",
+          "severity": "Error"
+        },
+        {
+          "id": "file.playermove",
+          "name": "PlayerMove.cs exists",
+          "type": "FileExists",
+          "target": "Assets/Scripts/PlayerMove.cs",
+          "severity": "Error"
+        },
+        {
+          "id": "file.startbtn",
+          "name": "StartBtn.cs exists",
+          "type": "FileExists",
+          "target": "Assets/Scripts/StartBtn.cs",
+          "severity": "Error"
+        },
+        {
+          "id": "file.timing",
+          "name": "Timing.cs exists",
+          "type": "FileExists",
+          "target": "Assets/Scripts/Timing.cs",
+          "severity": "Error"
+        }
+      ]
+    }
+  ]
+}
