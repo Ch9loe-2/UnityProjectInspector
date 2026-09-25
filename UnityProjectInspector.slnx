@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/UnityProjectInspector.Core/UnityProjectInspector.Core.csproj" />
+    <Project Path="src/UnityProjectInspector.Cli/UnityProjectInspector.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/UnityProjectInspector.Tests/UnityProjectInspector.Tests.csproj" />
+    <Project Path="tests/UnityProjectInspector.Cli.Tests/UnityProjectInspector.Cli.Tests.csproj" />
   </Folder>
 </Solution>
