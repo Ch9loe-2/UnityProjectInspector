@@ -24,7 +24,31 @@ CLI 是面向使用者的唯一入口，底层检测引擎（`UnityProjectInspec
 
 > 当前不是商业产品，也不是完整 CI/CD 平台：它聚焦于"Assignment → 检测 → 结果"这一核心闭环。
 
-## Quick Start
+## Quick Demo（macOS — 一键演示）
+
+> **给第一次看到这个项目的人准备的。** 无需输入任何命令，双击即可运行。
+
+1. Clone 仓库
+2. 双击 **`Demo.command`**
+3. 等待 Demo 自动完成
+
+Demo 会自动定位仓库、构建 CLI、执行**成功案例**和**故意失败案例**，最终展示清晰的汇总结果：
+
+```
+  [1/2] Static Inspection
+    Assignment: scene-check.json
+    Result: PASS (exit 0)
+
+  [2/2] Failure Detection
+    Assignment: static-fail.json
+    Result: EXPECTED FAIL (exit 1)
+
+  Demo completed successfully.
+```
+
+你不需要安装 Unity Editor，甚至不需要知道 CLI 的存在。
+
+## Quick Start（CLI — 命令行使用）
 
 无需安装 Unity、无需任何真实 Unity 项目，即可在本地复现完整的**静态检测**流程。
 
