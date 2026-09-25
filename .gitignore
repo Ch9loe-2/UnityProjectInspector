@@ -21,6 +21,12 @@ obj/
 packages/
 *.nupkg
 
+# Keep the demo fixture's Unity Packages manifest tracked. The generic
+# `packages/` rule above also matches `Packages/` on case-insensitive
+# filesystems, which would otherwise drop the fixture's Packages/ directory
+# and break the reproducible static demo on a fresh clone.
+!tests/fixtures/MinimalUnityProject/Packages/
+
 # Excluded project items
 .workbuddy/
 docs/M14_RuntimeFlow_Architecture_Audit.md

@@ -1,0 +1,21 @@
+{
+  "id": "example-static-fail",
+  "name": "Static-Fail Example Assignment",
+  "description": "Intentionally fails static analysis against the bundled demo fixture: it requires a scene named 'MissingScene' that does not exist in tests/fixtures/MinimalUnityProject, so the CLI exits with code 1 (Failed). Use it to verify the failure path of the CLI without a Unity Editor.",
+  "requirements": [
+    {
+      "id": "scene-missing",
+      "name": "Required scene exists",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.missing.exists",
+          "name": "MissingScene exists",
+          "type": "SceneExists",
+          "target": "MissingScene",
+          "severity": "Error"
+        }
+      ]
+    }
+  ]
+}

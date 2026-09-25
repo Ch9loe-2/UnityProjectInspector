@@ -19,6 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\UnityProjectInspector.Cli\UnityProjectInspector.Cli.csproj" />
     <ProjectReference Include="..\..\src\UnityProjectInspector.Core\UnityProjectInspector.Core.csproj" />
   </ItemGroup>
