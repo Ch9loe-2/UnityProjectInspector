@@ -118,6 +118,9 @@ Assignment failed: some requirements did not pass.
 
 ## Assignment format
 
+> 完整的字段、类型、可选性与所有 8 种静态规则 / 4 种 Runtime Action / 2 种 Runtime Assertion 的
+> 最小 JSON 示例，见 [docs/assignment-format.md](docs/assignment-format.md)（以 Core 代码为准的权威说明）。
+
 Assignment 是一个 JSON 文件，描述一组 `requirements`，每个 requirement 包含若干 `staticRules`
 （以及可选的 `runtimeTest`）。最小结构：
 
@@ -181,6 +184,145 @@ dotnet run --project src/UnityProjectInspector.Cli -- inspect \
 - `--project` 指向任意真实 Unity 工程（需含 `Assets/`、`ProjectSettings/`、`Packages/`）。
 - 纯静态 assignment 不依赖 Unity 安装；含 `RuntimeRequired` 的 assignment 需要提供可用的
   Unity Editor（macOS 下由 Unity Hub 自动发现，或用 `--unity` 显式指定）。
+
+## Inspect your own Unity project
+
+下面是一个**完整、真实可复现**的流程，目标读者是**第一次接触本工具、不读 Core 源码**的开发者。
+这里用变量 `YourUnityProject` 代表你本地的真实 Unity 工程目录。
+
+### 步骤
+
+1. **构建工具**
+
+   ```bash
+   dotnet build
+   ```
+
+2. **找到你的 Unity 工程目录**
+
+   记下它的绝对路径，例如 `/Users/you/Projects/MyGame`。确认它至少包含：
+
+   ```
+   Assets/
+   ProjectSettings/
+   Packages/
+   ```
+
+   （`Library/`、`obj/` 等由 Unity 生成，不必提交，也不会被本工具读取。）
+
+3. **确认工程里有哪些 Scene**
+
+   打开 `Assets/` 翻找 `.unity` 文件，记下其中一个场景名，例如 `MainScene`。
+   静态规则 `SceneExists` 按 `.unity` **文件名**匹配（区分大小写）。
+
+4. **创建你的 assignment JSON**
+
+   复制 [`examples/assignments/template.json`](examples/assignments/template.json)，把
+   `"YourSceneName"` 改成你工程里真实存在的场景名：
+
+   ```json
+   {
+     "id": "my-assignment",
+     "name": "My Assignment",
+     "requirements": [
+       {
+         "id": "scene-exists",
+         "name": "Required scene exists",
+         "evidenceRequirement": "StaticOnly",
+         "staticRules": [
+           {
+             "id": "scene.required.exists",
+             "name": "Required scene exists",
+             "type": "SceneExists",
+             "target": "MainScene",
+             "severity": "Error"
+           }
+         ]
+       }
+     ]
+   }
+   ```
+
+   保存为 `/Users/you/Projects/my-assignment.json`。（其它字段含义与更多规则类型见
+   [docs/assignment-format.md](docs/assignment-format.md)。）
+
+5. **运行静态检测**
+
+   ```bash
+   dotnet run --project src/UnityProjectInspector.Cli -- inspect \
+     --project "/Users/you/Projects/MyGame" \
+     --assignment "/Users/you/Projects/my-assignment.json"
+   ```
+
+   把上面两处路径替换成你自己的。若场景确实存在，结果为 `Result: ✓ PASSED`，退出码 `0`。
+
+6. **阅读结果**
+
+   - 文本模式：直接看 `Result:` 与每个 requirement 的 `✓ PASSED / ✗ FAILED`。
+   - 机器可读：加 `--format json`，stdout 是有效 JSON。
+
+7. **如果失败**
+
+   结果为 `Result: ✗ FAILED`、退出码 `1` 表示**检测已正常执行，但某条 requirement 没通过**。
+   例：`SceneExists` 失败时，说明：
+
+   - 场景文件不在 `Assets/` 下，或
+   - `target` 里的场景名与 `.unity` 文件名**大小写/拼写不一致**。
+
+   按 requirement 的 `id`（如 `scene-exists`）定位是哪一条，修正 assignment 或工程后重跑。
+
+8. **如果要做运行时检测**
+
+   把对应 requirement 的 `evidenceRequirement` 改为 `"RuntimeRequired"`，并补充 `runtimeTest`
+   （actions + assertions）。这需要本机安装 Unity Editor，且 CLI 能发现 Unity 可执行文件
+   （macOS 下走 Unity Hub，或用 `--unity <path>` 显式指定）。完整示例见
+   [`examples/assignments/runtime-required.json`](examples/assignments/runtime-required.json)。
+
+> 提示：`examples/assignments/` 下还有 `static-only.json`、`static-fail.json`、
+> `scene-check.json` 等可直接运行的示例；其中 `scene-check.json` 配合仓库内置的
+> `tests/fixtures/MinimalUnityProject` 即可在**不安装 Unity** 的情况下复现完整静态检测。
+
+## Troubleshooting
+
+### exit 2 — InvalidInput（输入 / 配置错误）
+
+CLI 在真正检测之前就发现输入有问题。常见原因与排查：
+
+| 现象 | 原因 | 处理 |
+|---|---|---|
+| `Project directory not found` | `--project` 路径不存在 | 检查路径拼写 |
+| `does not appear to be a valid Unity project` | 工程缺少 `Assets/`/`ProjectSettings/`/`Packages/` | 指向正确的 Unity 工程根目录 |
+| `Assignment file not found` | `--assignment` 路径不存在 | 检查 JSON 文件路径 |
+| `Assignment JSON is not valid: ...` | JSON 语法错误 / 未知 `$type` | 用 JSON 校验器检查；`$type` 必须是文档列出的确切值 |
+| `Assignment must contain at least one requirement` | `requirements` 为空数组 | 至少加一条 requirement |
+| `RuntimeRequired but has no RuntimeTest` | `evidenceRequirement: RuntimeRequired` 却没给 `runtimeTest` | 补 `runtimeTest`，或改回 `StaticOnly` |
+| `no Unity executable found` | 需要 Runtime 但找不到 Unity | 安装 Unity Hub，或用 `--unity <path>` 指定 |
+
+### exit 1 — Failed（检测通过，但需求未满足）
+
+CLI **正常执行完**了 inspection，只是有 requirement 没通过。看每个 requirement 的
+`✗ FAILED` 与消息：
+
+- `SceneExists` 失败 → 场景不在 `Assets/` 下，或文件名与 `target` 不一致（区分大小写）。
+- 其它静态规则失败 → 检查对应 GameObject / 组件 / 文件是否真实存在。
+
+### exit 3 — RuntimeError（运行时无法完成）
+
+Runtime inspection 启动 / 执行过程中失败（对应 `RuleStatus.NotEvaluated`）：
+
+- 本机是否安装了 Unity Editor？
+- Unity 可执行文件是否可用（Unity Hub 自动发现，或 `--unity` 指定）？
+- 工程能否正常 build？
+- Runtime Harness 是否部署成功（工具会自动部署并在结束后清理）？
+- 加 `--debug` 查看更详细的技术信息。
+
+### exit 4 — InternalError（工具内部未预期错误）
+
+发生了工具内部的未预期异常：
+
+- 默认输出只给一句提示 + 异常消息摘要，**不会**泄漏原始堆栈。
+- 加 `--debug`（或 `-v` / `--verbose`）可看到完整技术细节，便于反馈问题。
+- 保留 `--debug` 下的输出信息再上报。
 
 ## Requirements
 

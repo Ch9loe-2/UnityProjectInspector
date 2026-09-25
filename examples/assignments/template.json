@@ -1,0 +1,21 @@
+{
+  "id": "my-assignment",
+  "name": "My Assignment",
+  "description": "Copy this file and replace the placeholder values with your own assignment. Do NOT use absolute paths.",
+  "requirements": [
+    {
+      "id": "scene-exists",
+      "name": "Required scene exists",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.required.exists",
+          "name": "Required scene exists",
+          "type": "SceneExists",
+          "target": "YourSceneName",
+          "severity": "Error"
+        }
+      ]
+    }
+  ]
+}

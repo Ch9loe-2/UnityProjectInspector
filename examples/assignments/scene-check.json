@@ -1,0 +1,35 @@
+{
+  "id": "scene-check-example",
+  "name": "Scene + File Static Check Example",
+  "description": "A static-only assignment that passes against the bundled fixture tests/fixtures/MinimalUnityProject (TrainingScene + ProjectSettings/ProjectVersion.txt). Use it to verify the static inspection path end-to-end without a Unity Editor.",
+  "requirements": [
+    {
+      "id": "scene-exists",
+      "name": "TrainingScene exists",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "scene.training.exists",
+          "name": "TrainingScene exists",
+          "type": "SceneExists",
+          "target": "TrainingScene",
+          "severity": "Error"
+        }
+      ]
+    },
+    {
+      "id": "projectversion-exists",
+      "name": "ProjectVersion.txt exists",
+      "evidenceRequirement": "StaticOnly",
+      "staticRules": [
+        {
+          "id": "file.projectversion.exists",
+          "name": "ProjectSettings/ProjectVersion.txt exists",
+          "type": "FileExists",
+          "target": "ProjectSettings/ProjectVersion.txt",
+          "severity": "Error"
+        }
+      ]
+    }
+  ]
+}
