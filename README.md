@@ -306,6 +306,83 @@ dotnet run --project src/UnityProjectInspector.Cli -- inspect \
 > `scene-check.json` 等可直接运行的示例；其中 `scene-check.json` 配合仓库内置的
 > `tests/fixtures/MinimalUnityProject` 即可在**不安装 Unity** 的情况下复现完整静态检测。
 
+## Interactive Mode（交互模式）
+
+无需记忆参数——直接运行 CLI，进入交互模式：
+
+```bash
+dotnet run --project src/UnityProjectInspector.Cli
+```
+
+或：
+
+```bash
+dotnet run --project src/UnityProjectInspector.Cli -- inspect
+```
+
+交互模式提供四个选项：
+
+1. **快速检查** — 自动扫描 `Assets/Scenes/*.unity`，选择场景后立即检查（无需编写 JSON）
+2. **使用已有检查方案** — 选择一个已有的 assignment JSON 文件执行检查
+3. **创建检查方案** — 引导式创建 StaticOnly assignment（添加场景/游戏对象/组件/文件规则）
+4. **退出**
+
+交互模式下所有输出均为中文，包括检查结果、统计信息和规则类型名称。
+
+## Chinese Output（中文输出）
+
+标准 CLI 模式下也可以通过 `--format chinese` 输出中文检查报告：
+
+```bash
+dotnet run --no-build --project src/UnityProjectInspector.Cli -- inspect \
+  --project tests/fixtures/MinimalUnityProject \
+  --assignment examples/assignments/static-fail.json \
+  --format chinese
+```
+
+中文输出示例（失败场景）：
+
+```
+UnityProjectInspector 检查报告
+═══════════════════════════
+
+结果: ✗ 未通过
+
+检查项:
+  [scene-missing]
+    名称: Required scene exists
+    状态: ✗ 未通过
+    详情: StaticOnly: static analysis failed. Runtime not required.
+    类型: 静态检测
+
+统计: 通过 0 / 失败 1 / 未评估 0 / 总计 1
+
+Assignment failed: some requirements did not pass.
+```
+
+### Quick Check：一步检查你的真实 Unity 项目
+
+进入交互模式（`dotnet run --project src/UnityProjectInspector.Cli`），选择 **快速检查**：
+
+1. 输入项目路径（如 `/Users/you/MyUnityProject`）
+2. 自动扫描 `Assets/Scenes/` 下的场景
+3. 选择要检查的场景序号
+4. 自动执行并输出中文结果
+
+无需手动编写任何 JSON 文件。
+
+### Assignment Creator：交互式创建检查方案
+
+选择 **创建检查方案** 后：
+
+1. 输入方案 ID、名称和可选描述
+2. 逐条添加规则（场景 → 游戏对象 → 组件 → 文件）
+3. 查看、删除当前规则
+4. 保存为 JSON 文件
+5. 自动执行检查
+
+创建的 JSON 文件通过 `CliInputValidator` 和 `InspectionWorkflowValidator` 的完整验证，可直接用于后续检查。
+
 ## Troubleshooting
 
 ### exit 2 — InvalidInput（输入 / 配置错误）

@@ -119,7 +119,7 @@ public class M29DemoEntryTests
         Assert.Contains("Failure Detection", content, StringComparison.Ordinal);
 
         // Must have summary and wait for user
-        Assert.Contains("Demo Complete", content, StringComparison.Ordinal);
+        Assert.Contains("演示完成", content, StringComparison.Ordinal);
         Assert.Contains("close this window", content, StringComparison.Ordinal);
 
         // Must exit 0 on success

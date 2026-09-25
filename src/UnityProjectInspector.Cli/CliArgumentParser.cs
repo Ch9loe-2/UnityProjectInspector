@@ -20,7 +20,7 @@ Options:
   --assignment <path>   Assignment JSON file path (required)
   --unity <path>        Unity Editor executable path (optional, auto-detect)
   --output <path>       Output directory (optional, default: current directory)
-  --format <format>     Output format: text | json (optional, default: text)
+  --format <format>     Output format: text | json | chinese (optional, default: text)
   --debug               Show full error details on internal failures (optional)
   --help                Show this help
 
@@ -143,8 +143,8 @@ Examples:
             return (command, null, false, "Missing required option: --assignment <path>");
 
         // Validate format
-        if (format != null && format != "text" && format != "json")
-            return (command, null, false, $"Invalid format: '{format}'. Use 'text' or 'json'.");
+        if (format != null && format != "text" && format != "json" && format != "chinese")
+            return (command, null, false, $"Invalid format: '{format}'. Use 'text', 'json', or 'chinese'.");
 
         var options = new CliOptions
         {

@@ -67,6 +67,15 @@ public static class Program
 
     private static async Task<int> RunAsync(string[] args)
     {
+        // ─── Phase 0: Interactive mode entry ─────────────────────
+        // When args are empty, or "inspect" is given without enough
+        // arguments (missing --project or --assignment), enter interactive mode.
+        if (args.Length == 0 ||
+            (args.Length >= 1 && args[0] == "inspect" && !HasInspectArgs(args)))
+        {
+            return await InteractiveCli.RunAsync();
+        }
+
         // ─── Phase 1: Parse arguments ────────────────────────────
         var (command, options, helpRequested, parseError) = CliArgumentParser.Parse(args);
 
@@ -285,6 +294,20 @@ public static class Program
                 ResultFormatter.WriteJson(cliResult, Console.Out);
             }
         }
+        else if (options.Format == "chinese")
+        {
+            if (outputFilePath != null)
+            {
+                var ext = "txt";
+                outputFilePath = Path.Combine(
+                    Path.GetFullPath(options.OutputDirectory),
+                    $"inspection-result.{ext}");
+                using var fileWriter = new StreamWriter(outputFilePath);
+                ChineseResultFormatter.WriteDetailed(cliResult, fileWriter);
+                await Console.Out.WriteLineAsync($"Result written to: {outputFilePath}");
+            }
+            ChineseResultFormatter.WriteDetailed(cliResult, Console.Out);
+        }
         else
         {
             if (outputFilePath != null)
@@ -408,6 +431,20 @@ public static class Program
         foreach (var arg in args)
         {
             if (arg == "--debug" || arg == "-d" || arg == "--verbose" || arg == "-v")
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true when the argument list contains --project and --assignment flags,
+    /// meaning the user intends a non-interactive "inspect" run.
+    /// </summary>
+    private static bool HasInspectArgs(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (arg == "--project" || arg == "--assignment")
                 return true;
         }
         return false;

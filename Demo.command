@@ -52,7 +52,7 @@ log_skip()  { printf "  %s−%s %s\n" "$YELLOW" "$RESET" "$1"; }
 # ── Header ──────────────────────────────────────────────────────────────
 echo ""
 echo "${BOLD}══════════════════════════════════════════════════════════${NORMAL}"
-echo "${BOLD}  UnityProjectInspector Demo${NORMAL}"
+echo "${BOLD}  UnityProjectInspector 演示${NORMAL}"
 echo "${BOLD}══════════════════════════════════════════════════════════${NORMAL}"
 echo ""
 echo "  Repository:  $REPO_ROOT"
@@ -107,12 +107,13 @@ run_case() {
     printf "  %sAssignment:${RESET} %s\n" "$CYAN" "$assignment_name"
     echo ""
 
-    # Execute the CLI directly
+    # Execute the CLI directly (Chinese output)
     local exit_code=0
     local output
     output=$(dotnet run --no-build --project "$CLI_PROJECT" -- inspect \
         --project "$FIXTURE_DIR" \
-        --assignment "$assignment_path" 2>&1) || exit_code=$?
+        --assignment "$assignment_path" \
+        --format chinese 2>&1) || exit_code=$?
 
     echo "$output"
 
@@ -143,19 +144,19 @@ run_case "2/2" "Failure Detection" \
 # ── Summary ─────────────────────────────────────────────────────────────
 echo ""
 echo "${BOLD}══════════════════════════════════════════════════════════${NORMAL}"
-echo "${BOLD}  Demo Complete${NORMAL}"
+echo "${BOLD}  演示完成${NORMAL}"
 echo "${BOLD}══════════════════════════════════════════════════════════${NORMAL}"
 echo ""
-printf "  %sPASS:${RESET}          %d\n" "$GREEN" "$PASS_COUNT"
-printf "  %sEXPECTED FAIL:${RESET} %d\n" "$YELLOW" "$EXPECTED_FAIL_COUNT"
-printf "  %sUNEXPECTED FAIL:%s %d\n" "$([ "$UNEXPECTED_FAIL_COUNT" -gt 0 ] && echo "$RED" || echo "$GREEN")" "$RESET" "$UNEXPECTED_FAIL_COUNT"
+printf "  %s通过:${RESET}          %d\n" "$GREEN" "$PASS_COUNT"
+printf "  %s预期失败:${RESET} %d\n" "$YELLOW" "$EXPECTED_FAIL_COUNT"
+printf "  %s意外失败:%s %d\n" "$([ "$UNEXPECTED_FAIL_COUNT" -gt 0 ] && echo "$RED" || echo "$GREEN")" "$RESET" "$UNEXPECTED_FAIL_COUNT"
 echo ""
 
 if [ "$UNEXPECTED_FAIL_COUNT" -eq 0 ]; then
-    echo "  ${GREEN}${BOLD}Demo completed successfully.${NORMAL}${RESET}"
+    echo "  ${GREEN}${BOLD}演示全部通过。${NORMAL}${RESET}"
     FINAL_EXIT=0
 else
-    echo "  ${RED}${BOLD}Demo completed with unexpected failures.${NORMAL}${RESET}"
+    echo "  ${RED}${BOLD}演示包含意外的失败。${NORMAL}${RESET}"
     FINAL_EXIT=1
 fi
 

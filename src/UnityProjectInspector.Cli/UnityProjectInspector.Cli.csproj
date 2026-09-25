@@ -12,4 +12,8 @@
     <ProjectReference Include="..\UnityProjectInspector.Core\UnityProjectInspector.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="UnityProjectInspector.Cli.Tests" />
+  </ItemGroup>
+
 </Project>
