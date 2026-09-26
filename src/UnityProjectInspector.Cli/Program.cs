@@ -340,6 +340,10 @@ public static class Program
                 {
                     InspectionReportWriter.WriteMarkdown(report, reportWriter);
                 }
+                else if (IsHtmlReport(reportFullPath))
+                {
+                    InspectionReportWriter.WriteHtml(report, reportWriter);
+                }
                 else
                 {
                     InspectionReportWriter.WriteJson(report, reportWriter);
@@ -484,13 +488,23 @@ public static class Program
 
     /// <summary>
     /// Infers the inspection report format from the --report file extension.
-    /// <c>.md</c> / <c>.markdown</c> → Markdown; any other extension → JSON.
+    /// <c>.md</c> / <c>.markdown</c> → Markdown; <c>.html</c> → HTML;
+    /// any other extension → JSON.
     /// </summary>
     private static bool IsMarkdownReport(string reportPath)
     {
         var ext = Path.GetExtension(reportPath);
         return string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
             || string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Returns true when the --report file has an .html extension.
+    /// </summary>
+    private static bool IsHtmlReport(string reportPath)
+    {
+        var ext = Path.GetExtension(reportPath);
+        return string.Equals(ext, ".html", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

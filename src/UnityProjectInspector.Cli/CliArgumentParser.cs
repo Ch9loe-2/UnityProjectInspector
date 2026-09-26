@@ -21,13 +21,14 @@ Options:
   --unity <path>        Unity Editor executable path (optional, auto-detect)
   --output <path>       Output directory (optional, default: current directory)
   --format <format>     Output format: text | json | chinese (optional, default: text)
-  --report <path>       Write a detailed inspection report (.json/.md); format inferred from extension (optional)
+  --report <path>       Write a detailed inspection report (.json/.md/.html); format inferred from extension (optional)
   --debug               Show full error details on internal failures (optional)
   --help                Show this help
 
 Examples:
   unityprojectinspector inspect --project ./MyUnityProject --assignment assignment.json
   unityprojectinspector inspect --project ./MyUnityProject --assignment a.json --format json --output ./results
+  unityprojectinspector inspect --project ./MyUnityProject --assignment a.json --report report.html
 """;
 
     /// <summary>

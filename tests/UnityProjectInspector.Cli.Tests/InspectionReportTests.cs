@@ -168,6 +168,82 @@ public class InspectionReportBuilderTests
         Assert.Contains("ProcessExited", md, StringComparison.Ordinal);
         Assert.Contains("Player exited before producing evidence.", md, StringComparison.Ordinal);
     }
+[Fact]
+    public void WriteHtml_ContainsAssignmentMetadata()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteHtml(report, writer);
+        var html = writer.ToString();
+
+        Assert.Contains("Inspection Report: 2D Maze Assignment", html, StringComparison.Ordinal);
+        Assert.Contains("maze-2d", html, StringComparison.Ordinal);
+        Assert.Contains("FAILED", html, StringComparison.Ordinal);
+        Assert.Contains("Verify the maze project.", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteHtml_ContainsRuleAndRuntimeDetail()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteHtml(report, writer);
+        var html = writer.ToString();
+
+        // Static rules
+        Assert.Contains("SceneExists", html, StringComparison.Ordinal);
+        Assert.Contains("SR001", html, StringComparison.Ordinal);
+        Assert.Contains("StartButton not found.", html, StringComparison.Ordinal);
+
+        // Runtime evidence
+        Assert.Contains("Merged Result", html, StringComparison.Ordinal);
+        Assert.Contains("ProcessExited", html, StringComparison.Ordinal);
+        Assert.Contains("Player exited before producing evidence.", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteHtml_HasSummaryCounts()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteHtml(report, writer);
+        var html = writer.ToString();
+
+        Assert.Contains("0 passed", html, StringComparison.Ordinal); // failed not passed, so 0 passed
+        Assert.Contains("1 failed", html, StringComparison.Ordinal);
+        Assert.Contains("1 total requirement", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteHtml_EmptyRequirements_ShowsEmptyState()
+    {
+        var core = new AssignmentInspectionResult
+        {
+            Assignment = new AssignmentDefinition { Id = "empty", Name = "Empty" },
+            FinalStatus = RuleStatus.Passed,
+            Message = "nothing to do",
+            RequirementResults = new List<RequirementInspectionResult>(),
+        };
+        var report = InspectionReportBuilder.Build(core);
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteHtml(report, writer);
+        var html = writer.ToString();
+
+        Assert.Contains("No requirements were evaluated.", html, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteHtml_HasDOCTYPEAndHtmlTag()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteHtml(report, writer);
+        var html = writer.ToString();
+
+        Assert.StartsWith("<!DOCTYPE html>", html.Trim(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<html lang=\"en\">", html, StringComparison.Ordinal);
+        Assert.Contains("</html>", html, StringComparison.Ordinal);
+    }
 }
 
 public class CliArgumentParserReportTests
