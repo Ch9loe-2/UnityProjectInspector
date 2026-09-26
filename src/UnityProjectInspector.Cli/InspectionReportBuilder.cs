@@ -21,11 +21,12 @@ public static class InspectionReportBuilder
 
         var report = new InspectionReport
         {
+            SchemaVersion = InspectionReport.CurrentSchemaVersion,
             AssignmentId = assignment?.Id ?? "unknown",
             AssignmentName = assignment?.Name ?? "Unknown",
             AssignmentDescription = assignment?.Description,
             GeneratedAt = DateTime.UtcNow.ToString("o"),
-            FinalStatus = StatusToString(coreResult.FinalStatus),
+            FinalStatus = CliStatusFormatter.StatusToString(coreResult.FinalStatus),
             Message = coreResult.Message,
         };
 
@@ -48,18 +49,18 @@ public static class InspectionReportBuilder
         if (rr.CompositeResult != null)
         {
             var c = rr.CompositeResult;
-            composite = new InspectionReportComposite
-            {
-                RuleId = c.RuleId,
-                RuleName = c.RuleName,
-                StaticStatus = c.StaticStatus.HasValue ? StatusToString(c.StaticStatus.Value) : null,
-                RuntimeStatus = c.RuntimeStatus.HasValue ? StatusToString(c.RuntimeStatus.Value) : null,
-                FinalStatus = StatusToString(c.FinalStatus),
-                Requirement = c.Requirement.ToString(),
-                Message = c.Message,
-                RuntimeResultDetail = c.RuntimeResultDetail?.ToString(),
-                RuntimeMessage = c.RuntimeMessage,
-            };
+                composite = new InspectionReportComposite
+                {
+                    RuleId = c.RuleId,
+                    RuleName = c.RuleName,
+                    StaticStatus = c.StaticStatus.HasValue ? CliStatusFormatter.StatusToString(c.StaticStatus.Value) : null,
+                    RuntimeStatus = c.RuntimeStatus.HasValue ? CliStatusFormatter.StatusToString(c.RuntimeStatus.Value) : null,
+                    FinalStatus = CliStatusFormatter.StatusToString(c.FinalStatus),
+                    Requirement = c.Requirement.ToString(),
+                    Message = c.Message,
+                    RuntimeResultDetail = c.RuntimeResultDetail?.ToString(),
+                    RuntimeMessage = c.RuntimeMessage,
+                };
         }
 
         var req = new InspectionReportRequirement
@@ -67,7 +68,7 @@ public static class InspectionReportBuilder
             Id = requirement?.Id ?? "unknown",
             Name = requirement?.Name ?? "Unknown",
             Description = requirement?.Description,
-            Status = StatusToString(rr.Status),
+            Status = CliStatusFormatter.StatusToString(rr.Status),
             Message = rr.Message,
             EvidenceRequirement = requirement?.EvidenceRequirement ?? "StaticOnly",
             HasRuntime = rr.CompositeResult?.RuntimeStatus != null,
@@ -82,7 +83,7 @@ public static class InspectionReportBuilder
                 {
                     RuleId = sr.RuleId,
                     RuleName = sr.RuleName,
-                    Status = StatusToString(sr.Status),
+                    Status = CliStatusFormatter.StatusToString(sr.Status),
                     Severity = sr.Severity.ToString(),
                     Message = sr.Message,
                 });
@@ -91,12 +92,4 @@ public static class InspectionReportBuilder
 
         return req;
     }
-
-    private static string StatusToString(RuleStatus status) => status switch
-    {
-        RuleStatus.Passed => "PASSED",
-        RuleStatus.Failed => "FAILED",
-        RuleStatus.NotEvaluated => "NOT_EVALUATED",
-        _ => "UNKNOWN",
-    };
 }

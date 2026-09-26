@@ -17,6 +17,18 @@ namespace UnityProjectInspector.Cli;
 /// </summary>
 public class InspectionReport
 {
+    /// <summary>
+    /// Stable schema version of this report's JSON / Markdown / HTML contract.
+    /// Fixed at <see cref="CurrentSchemaVersion"/>. This identifies the *report format*,
+    /// not the inspection result — it never reflects pass/fail, the current time, the
+    /// project path, or the machine environment. Consumers can pin tooling to a specific
+    /// report schema by checking this value.
+    /// </summary>
+    public const string CurrentSchemaVersion = "1.0";
+
+    [JsonPropertyName("schemaVersion")]
+    public required string SchemaVersion { get; init; }
+
     [JsonPropertyName("assignmentId")]
     public required string AssignmentId { get; init; }
 

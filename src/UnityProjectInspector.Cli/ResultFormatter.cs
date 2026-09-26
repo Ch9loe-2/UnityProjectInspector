@@ -37,7 +37,7 @@ public static class ResultFormatter
                 {
                     Id = rr.Requirement?.Id ?? "unknown",
                     Name = rr.Requirement?.Name ?? "Unknown",
-                    Status = StatusToString(rr.Status),
+                    Status = CliStatusFormatter.StatusToString(rr.Status),
                     Message = rr.Message,
                     HasRuntime = rr.CompositeResult?.RuntimeStatus != null,
                 });
@@ -46,7 +46,7 @@ public static class ResultFormatter
 
         return new CliInspectionResult
         {
-            Status = StatusToString(coreResult.FinalStatus),
+            Status = CliStatusFormatter.StatusToString(coreResult.FinalStatus),
             Message = coreResult.Message,
             Requirements = reqResults,
         };
@@ -89,16 +89,5 @@ public static class ResultFormatter
     {
         var json = JsonSerializer.Serialize(result, JsonOptions);
         writer.WriteLine(json);
-    }
-
-    private static string StatusToString(RuleStatus status)
-    {
-        return status switch
-        {
-            RuleStatus.Passed => "PASSED",
-            RuleStatus.Failed => "FAILED",
-            RuleStatus.NotEvaluated => "NOT_EVALUATED",
-            _ => "UNKNOWN",
-        };
     }
 }

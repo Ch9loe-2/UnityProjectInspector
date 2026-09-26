@@ -152,6 +152,113 @@ public class InspectionReportBuilderTests
         Assert.Equal("ProcessExited", reqs[0].GetProperty("composite").GetProperty("runtimeResultDetail").GetString());
     }
 
+    // ─── M33: Report schema-version contract ──────────────────
+
+    [Fact]
+    public void Build_SetsStableSchemaVersion()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        Assert.Equal("1.0", report.SchemaVersion);
+        Assert.Equal(InspectionReport.CurrentSchemaVersion, report.SchemaVersion);
+    }
+
+    [Fact]
+    public void WriteJson_ContainsSchemaVersion_NonEmpty_AndFixedValue()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteJson(report, writer);
+        var json = writer.ToString();
+
+        var parsed = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json);
+        Assert.True(parsed.TryGetProperty("schemaVersion", out var sv));
+        var svText = sv.GetString();
+        Assert.NotNull(svText);
+        Assert.NotEmpty(svText);
+        Assert.Equal("1.0", svText);
+
+        // Core existing fields remain present (no field removed/renamed)
+        Assert.True(parsed.TryGetProperty("assignmentId", out _));
+        Assert.True(parsed.TryGetProperty("requirements", out _));
+        var reqs = parsed.GetProperty("requirements");
+        Assert.Equal(2, reqs[0].GetProperty("staticRules").GetArrayLength());
+        Assert.True(reqs[0].TryGetProperty("composite", out _));
+    }
+
+    [Fact]
+    public void WriteJson_SchemaVersionIsStableAcrossDifferentResults()
+    {
+        var failedReport = InspectionReportBuilder.Build(MakeCoreResult());
+
+        // A structurally different (fully-passing) result — built via init-only object
+        // initializers because the Core DTO statuses are init-only properties.
+        var passedCore = new AssignmentInspectionResult
+        {
+            Assignment = new AssignmentDefinition
+            {
+                Id = "maze-2d",
+                Name = "2D Maze Assignment",
+                Description = "Verify the maze project.",
+            },
+            RequirementResults = new List<RequirementInspectionResult>
+            {
+                new()
+                {
+                    Requirement = new RequirementDefinition
+                    {
+                        Id = "R001",
+                        Name = "Main menu exists",
+                        Description = "The project must contain a main menu scene.",
+                        EvidenceRequirement = "StaticOnly",
+                    },
+                    Status = RuleStatus.Passed,
+                    Message = "All checks passed.",
+                    StaticResults = new List<RuleResult>
+                    {
+                        new() { RuleId = "SR001", RuleName = "SceneExists", Status = RuleStatus.Passed, Severity = RuleSeverity.Info, Message = "Scene MainMenu found." },
+                    },
+                },
+            },
+            FinalStatus = RuleStatus.Passed,
+            Message = "Assignment passed.",
+        };
+
+        var passedReport = InspectionReportBuilder.Build(passedCore);
+
+        Assert.Equal(failedReport.SchemaVersion, passedReport.SchemaVersion);
+        Assert.Equal("1.0", passedReport.SchemaVersion);
+    }
+
+    [Fact]
+    public void WriteMarkdown_ContainsSchemaVersion()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteMarkdown(report, writer);
+        var md = writer.ToString();
+
+        Assert.Contains("Schema version:", md, StringComparison.Ordinal);
+        Assert.Contains("1.0", md, StringComparison.Ordinal);
+        // rule-level + runtime evidence still present
+        Assert.Contains("Static rule results", md, StringComparison.Ordinal);
+        Assert.Contains("Merged result (static + runtime)", md, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteHtml_ContainsSchemaVersion()
+    {
+        var report = InspectionReportBuilder.Build(MakeCoreResult());
+        using var writer = new StringWriter();
+        InspectionReportWriter.WriteHtml(report, writer);
+        var html = writer.ToString();
+
+        Assert.Contains("report-schema-version", html, StringComparison.Ordinal);
+        Assert.Contains("report schema 1.0", html, StringComparison.Ordinal);
+        // rule-level + runtime evidence still present
+        Assert.Contains("SceneExists", html, StringComparison.Ordinal);
+        Assert.Contains("Merged Result", html, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void WriteMarkdown_ContainsRuleAndRuntimeDetail()
     {
