@@ -33,6 +33,9 @@ public static class ResultFormatter
         {
             foreach (var rr in coreResult.RequirementResults)
             {
+                var evidence = RuleEvidenceBuilder.BuildEvidence(
+                    rr.Requirement!, rr.StaticResults);
+
                 reqResults.Add(new CliRequirementResult
                 {
                     Id = rr.Requirement?.Id ?? "unknown",
@@ -40,6 +43,7 @@ public static class ResultFormatter
                     Status = CliStatusFormatter.StatusToString(rr.Status),
                     Message = rr.Message,
                     HasRuntime = rr.CompositeResult?.RuntimeStatus != null,
+                    RuleEvidence = evidence,
                 });
             }
         }
@@ -74,6 +78,26 @@ public static class ResultFormatter
             {
                 var sym = req.Status == "PASSED" ? "✓" : req.Status == "FAILED" ? "✗" : "?";
                 writer.WriteLine($"  {req.Id,-20} {sym} {req.Status,-12} {req.Message}");
+
+                // Per-rule evidence (M33)
+                if (req.RuleEvidence != null && req.RuleEvidence.Count > 0)
+                {
+                    foreach (var ev in req.RuleEvidence)
+                    {
+                        var evSym = ev.Status == "PASSED" ? "✓" : "✗";
+                        writer.WriteLine($"    {evSym} {ev.RuleType}");
+                        if (ev.Target != null)
+                            writer.WriteLine($"      目标: {ev.Target}");
+                        if (ev.Expected != null)
+                            writer.WriteLine($"      期望: {ev.Expected}");
+                        if (ev.Actual != null)
+                            writer.WriteLine($"      结果: {ev.Actual}");
+                        if (ev.Source != null)
+                            writer.WriteLine($"      来源: {ev.Source}");
+                        if (ev.Reason != null)
+                            writer.WriteLine($"      原因: {ev.Reason}");
+                    }
+                }
             }
             writer.WriteLine();
         }

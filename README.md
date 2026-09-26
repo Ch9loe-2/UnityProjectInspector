@@ -383,6 +383,115 @@ Assignment failed: some requirements did not pass.
 
 创建的 JSON 文件通过 `CliInputValidator` 和 `InspectionWorkflowValidator` 的完整验证，可直接用于后续检查。
 
+## Inspection Evidence &amp; Explainability (M33)
+
+Every rule check can produce structured **evidence** explaining what was checked, what was expected,
+what was actually observed, and why the result was determined. Evidence is derived from the existing
+`RuleDefinition` + `RuleResult` data at the CLI layer — no Core DTOs are modified.
+
+### Evidence fields
+
+| Field | Type | Description |
+|---|---|---|
+| `ruleId` | `string` | Unique rule identifier |
+| `ruleType` | `string` | Rule type (e.g. `SceneExists`, `FileExists`) |
+| `status` | `string` | `PASSED` / `FAILED` / `NOT_EVALUATED` |
+| `target` | `string?` | The primary target (scene name, GameObject name, file path) |
+| `expected` | `string?` | What was expected (component type, parent name, method name — rule-specific) |
+| `actual` | `string?` | What was actually observed (`"exists"`, `"not found"`, `"script attached"`, etc.) |
+| `source` | `string?` | Location/source when reliably available (e.g. `Scenes/Main.unity`, `Assets/Scripts/PlayerMove.cs`) |
+| `reason` | `string?` | Human-readable explanation of the result |
+
+Evidence is available in all output formats and in the inspection report (JSON / Markdown / HTML).
+
+### Evidence per rule type
+
+| Rule Type | Target | Expected | Source example (PASS) |
+|---|---|---|---|
+| `SceneExists` | scene name | — | `Scenes/Main.unity` |
+| `GameObjectExists` | GameObject name | — | Scene path (when scoped) |
+| `ComponentExists` | GameObject name | component class | — |
+| `FileExists` | file path | — | same as Target |
+| `ScriptAttached` | GameObject name | script class | — |
+| `GameObjectHierarchy` | child name | parent name | — |
+| `UnityEventBinding` | source GameObject | method name | — |
+| `CodeEvidence` | source GameObject | method name | — |
+
+### Evidence in text output
+
+The default `--format text` output shows per-rule evidence indented under each requirement:
+
+```
+Requirements:
+  all-scenes-present   ✓ PASSED       StaticOnly: static analysis passed.
+    ✓ SceneExists
+      目标: Main
+      结果: exists
+      来源: Scenes/Main.unity
+      原因: Scene 'Main' exists
+    ✓ SceneExists
+      目标: Level
+      结果: exists
+      来源: Scenes/Level.unity
+      原因: Scene 'Level' exists
+```
+
+Chinese mode (`--format chinese`) translates evidence labels and known actual values:
+
+```
+    ✓ 场景存在
+      目标: Main
+      结果: 存在
+      来源: Scenes/Main.unity
+      原因: Scene 'Main' exists
+```
+
+### Evidence in JSON (machine-readable)
+
+Evidence is emitted as an optional `ruleEvidence` array under each requirement's JSON object.
+Null fields are omitted (`JsonIgnoreCondition.WhenWritingNull`) to preserve backward compatibility:
+
+```json
+{
+  "requirements": [
+    {
+      "id": "all-scenes-present",
+      "status": "PASSED",
+      "ruleEvidence": [
+        {
+          "ruleId": "scene.main-menu",
+          "ruleType": "SceneExists",
+          "status": "PASSED",
+          "target": "Main",
+          "actual": "exists",
+          "reason": "Scene 'Main' exists",
+          "source": "Scenes/Main.unity"
+        }
+      ]
+    }
+  ]
+}
+```
+
+When evidence is not available (no static rules were evaluated), the `ruleEvidence` key is absent
+from the JSON output.
+
+### Evidence in inspection reports
+
+The `--report <path>` feature generates evidence-rich reports in JSON, Markdown, or HTML:
+
+- **JSON report**: Same structure as CLI JSON, but with schema version and full rule-level detail
+- **Markdown report**: Per-rule evidence tables under a `### Evidence` heading
+- **HTML report**: Evidence cards with status badges inside collapsible detail sections
+
+Reports are generated with:
+```bash
+dotnet run --project src/UnityProjectInspector.Cli -- inspect \
+  --project /path/to/UnityProject \
+  --assignment /path/to/assignment.json \
+  --report /path/to/report.json   # or .md / .html
+```
+
 ## Troubleshooting
 
 ### exit 2 — InvalidInput（输入 / 配置错误）

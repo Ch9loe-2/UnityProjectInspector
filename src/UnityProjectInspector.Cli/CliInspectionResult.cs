@@ -37,4 +37,48 @@ public class CliRequirementResult
 
     [JsonPropertyName("hasRuntime")]
     public bool HasRuntime { get; init; }
+
+    /// <summary>Per-rule evidence details for this requirement (M33).</summary>
+    [JsonPropertyName("ruleEvidence")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CliRuleEvidence>? RuleEvidence { get; init; }
+}
+
+/// <summary>
+/// Evidence detail for a single rule check (M33).
+/// Structured fields extracted from the rule definition and result.
+/// </summary>
+public class CliRuleEvidence
+{
+    [JsonPropertyName("ruleId")]
+    public required string RuleId { get; init; }
+
+    [JsonPropertyName("ruleType")]
+    public required string RuleType { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("target")]
+    public string? Target { get; init; }
+
+    /// <summary>What was expected (e.g. component type, script class, parent name).</summary>
+    [JsonPropertyName("expected")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Expected { get; init; }
+
+    /// <summary>What was actually observed (e.g. "exists", "not found").</summary>
+    [JsonPropertyName("actual")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Actual { get; init; }
+
+    /// <summary>Human-readable reason for the result.</summary>
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+
+    /// <summary>Source/location when reliably available.</summary>
+    [JsonPropertyName("source")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Source { get; init; }
 }

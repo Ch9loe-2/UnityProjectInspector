@@ -27,6 +27,9 @@ packages/
 # and break the reproducible static demo on a fresh clone.
 !tests/fixtures/MinimalUnityProject/Packages/
 
+# M33 E2E report artifacts
+m33-reports/
+
 # Excluded project items
 .workbuddy/
 docs/M14_RuntimeFlow_Architecture_Audit.md

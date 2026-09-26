@@ -79,6 +79,40 @@ public static class ChineseResultFormatter
                     writer.WriteLine("    类型: 静态检测");
                 }
 
+                // Per-rule evidence (M33)
+                if (req.RuleEvidence != null && req.RuleEvidence.Count > 0)
+                {
+                    foreach (var ev in req.RuleEvidence)
+                    {
+                        var evSym = ev.Status == "PASSED" ? "✓" : "✗";
+                        var typeCn = RuleTypeToChineseName(ev.RuleType);
+                        writer.WriteLine($"    {evSym} {typeCn}");
+                        if (ev.Target != null)
+                            writer.WriteLine($"      目标: {ev.Target}");
+                        if (ev.Expected != null)
+                            writer.WriteLine($"      期望: {ev.Expected}");
+                        if (ev.Actual != null)
+                        {
+                            var actualCn = ev.Actual switch
+                            {
+                                "exists" => "存在",
+                                "not found" => "不存在",
+                                "not evaluated" => "未评估",
+                                "script attached" => "已挂载",
+                                "no scripts" => "无脚本",
+                                "binding exists" => "绑定存在",
+                                "evidence chain verified" => "证据链已确认",
+                                _ => ev.Actual,
+                            };
+                            writer.WriteLine($"      结果: {actualCn}");
+                        }
+                        if (ev.Source != null)
+                            writer.WriteLine($"      来源: {ev.Source}");
+                        if (ev.Reason != null)
+                            writer.WriteLine($"      原因: {ev.Reason}");
+                    }
+                }
+
                 writer.WriteLine();
             }
 

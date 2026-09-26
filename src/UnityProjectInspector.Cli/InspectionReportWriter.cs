@@ -71,8 +71,29 @@ public static class InspectionReportWriter
                     writer.WriteLine(
                         $"| {r.RuleName} (`{r.RuleId}`) | {r.Status} | {r.Severity} | {EscapePipe(r.Message)} |");
                 }
-
                 writer.WriteLine();
+
+                // Evidence table (M33)
+                if (req.RuleEvidence != null && req.RuleEvidence.Count > 0)
+                {
+                    writer.WriteLine("### Evidence");
+                    writer.WriteLine();
+                    foreach (var ev in req.RuleEvidence)
+                    {
+                        var icon = ev.Status == "PASSED" ? "✓" : "✗";
+                        writer.WriteLine($"**{icon} {ev.RuleType}**");
+                        writer.WriteLine();
+                        writer.WriteLine("| Field | Detail |");
+                        writer.WriteLine("| --- | --- |");
+                        writer.WriteLine($"| Status | {ev.Status} |");
+                        if (ev.Target != null) writer.WriteLine($"| Target | {EscapePipe(ev.Target)} |");
+                        if (ev.Expected != null) writer.WriteLine($"| Expected | {EscapePipe(ev.Expected)} |");
+                        if (ev.Actual != null) writer.WriteLine($"| Result | {EscapePipe(ev.Actual)} |");
+                        if (ev.Source != null) writer.WriteLine($"| Source | {EscapePipe(ev.Source)} |");
+                        if (ev.Reason != null) writer.WriteLine($"| Reason | {EscapePipe(ev.Reason)} |");
+                        writer.WriteLine();
+                    }
+                }
             }
 
             if (req.Composite != null)
@@ -206,6 +227,28 @@ public static class InspectionReportWriter
                         }
                         writer.WriteLine("        </tbody>");
                         writer.WriteLine("      </table>");
+
+                        // Evidence (M33)
+                        if (req.RuleEvidence != null && req.RuleEvidence.Count > 0)
+                        {
+                            writer.WriteLine("      <h3>Evidence</h3>");
+                            foreach (var ev in req.RuleEvidence)
+                            {
+                                var evIcon = ev.Status == "PASSED" ? "✓" : "✗";
+                                var evClass = StatusClass(ev.Status);
+                                writer.WriteLine($"      <div class=\"evidence-card\">");
+                                writer.WriteLine($"        <div class=\"evidence-header\"><span class=\"status-badge tiny {evClass}\">{evIcon} {HtmlEscape(ev.RuleType)}</span></div>");
+                                writer.WriteLine("        <table class=\"rule-table\">");
+                                writer.WriteLine($"          <tr><td>Status</td><td><span class=\"status-badge tiny {evClass}\">{HtmlEscape(ev.Status)}</span></td></tr>");
+                                if (ev.Target != null) writer.WriteLine($"          <tr><td>Target</td><td>{HtmlEscape(ev.Target)}</td></tr>");
+                                if (ev.Expected != null) writer.WriteLine($"          <tr><td>Expected</td><td>{HtmlEscape(ev.Expected)}</td></tr>");
+                                if (ev.Actual != null) writer.WriteLine($"          <tr><td>Result</td><td>{HtmlEscape(ev.Actual)}</td></tr>");
+                                if (ev.Source != null) writer.WriteLine($"          <tr><td>Source</td><td>{HtmlEscape(ev.Source)}</td></tr>");
+                                if (ev.Reason != null) writer.WriteLine($"          <tr><td>Reason</td><td>{HtmlEscape(ev.Reason)}</td></tr>");
+                                writer.WriteLine("        </table>");
+                                writer.WriteLine("      </div>");
+                            }
+                        }
                     }
 
                     // Merged runtime result

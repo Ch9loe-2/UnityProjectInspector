@@ -69,6 +69,11 @@ public class InspectionReportRequirement
     [JsonPropertyName("message")]
     public required string Message { get; init; }
 
+    /// <summary>Per-rule evidence details for this requirement (M33).</summary>
+    [JsonPropertyName("ruleEvidence")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<InspectionReportRuleEvidence>? RuleEvidence { get; init; }
+
     /// <summary>Evidence requirement string from the requirement definition ("StaticOnly" / "RuntimeRequired").</summary>
     [JsonPropertyName("evidenceRequirement")]
     public required string EvidenceRequirement { get; init; }
@@ -130,4 +135,41 @@ public class InspectionReportComposite
 
     [JsonPropertyName("runtimeMessage")]
     public string? RuntimeMessage { get; init; }
+}
+
+/// <summary>
+/// Evidence detail for a single rule check, used in the inspection report (M33).
+/// Structured fields extracted from rule definition + result at build time.
+/// Null fields indicate the information was not reliably available.
+/// </summary>
+public class InspectionReportRuleEvidence
+{
+    [JsonPropertyName("ruleId")]
+    public required string RuleId { get; init; }
+
+    [JsonPropertyName("ruleType")]
+    public required string RuleType { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("target")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Target { get; init; }
+
+    [JsonPropertyName("expected")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Expected { get; init; }
+
+    [JsonPropertyName("actual")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Actual { get; init; }
+
+    [JsonPropertyName("reason")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+
+    [JsonPropertyName("source")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Source { get; init; }
 }

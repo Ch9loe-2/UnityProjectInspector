@@ -63,6 +63,9 @@ public static class InspectionReportBuilder
                 };
         }
 
+        var evidence = RuleEvidenceBuilder.BuildEvidence(
+                requirement!, rr.StaticResults);
+
         var req = new InspectionReportRequirement
         {
             Id = requirement?.Id ?? "unknown",
@@ -73,6 +76,17 @@ public static class InspectionReportBuilder
             EvidenceRequirement = requirement?.EvidenceRequirement ?? "StaticOnly",
             HasRuntime = rr.CompositeResult?.RuntimeStatus != null,
             Composite = composite,
+            RuleEvidence = evidence?.Select(e => new InspectionReportRuleEvidence
+            {
+                RuleId = e.RuleId,
+                RuleType = e.RuleType,
+                Status = e.Status,
+                Target = e.Target,
+                Expected = e.Expected,
+                Actual = e.Actual,
+                Reason = e.Reason,
+                Source = e.Source,
+            }).ToList(),
         };
 
         if (rr.StaticResults != null)
