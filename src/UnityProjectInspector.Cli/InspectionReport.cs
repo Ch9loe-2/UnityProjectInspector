@@ -50,6 +50,11 @@ public class InspectionReport
 
     [JsonPropertyName("requirements")]
     public List<InspectionReportRequirement> Requirements { get; init; } = new();
+
+    /// <summary>Workflow-level stage trace (M34). Null when no stage tracing was configured.</summary>
+    [JsonPropertyName("stages")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CliStageInfo>? Stages { get; set; }
 }
 
 public class InspectionReportRequirement

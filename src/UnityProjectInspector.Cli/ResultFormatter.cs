@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnityProjectInspector.Core.Assignments;
 using UnityProjectInspector.Core.Models.Rules;
+using UnityProjectInspector.Core.Trace;
 
 namespace UnityProjectInspector.Cli;
 
@@ -48,11 +49,27 @@ public static class ResultFormatter
             }
         }
 
+        // Map Core stages to CLI stages
+        List<CliStageInfo>? cliStages = null;
+        if (coreResult.Stages != null && coreResult.Stages.Count > 0)
+        {
+            cliStages = coreResult.Stages
+                .Select(s => new CliStageInfo
+                {
+                    Name = s.Name,
+                    Status = s.Status,
+                    DurationMs = s.DurationMs,
+                    Message = s.Message,
+                })
+                .ToList();
+        }
+
         return new CliInspectionResult
         {
             Status = CliStatusFormatter.StatusToString(coreResult.FinalStatus),
             Message = coreResult.Message,
             Requirements = reqResults,
+            Stages = cliStages,
         };
     }
 
@@ -98,6 +115,21 @@ public static class ResultFormatter
                             writer.WriteLine($"      原因: {ev.Reason}");
                     }
                 }
+            }
+            writer.WriteLine();
+        }
+
+        // Stage trace (M34)
+        if (result.Stages != null && result.Stages.Count > 0)
+        {
+            writer.WriteLine("Workflow Trace:");
+            writer.WriteLine("──────────────");
+            foreach (var stage in result.Stages)
+            {
+                var sym = stage.Status == "passed" ? "✓" : stage.Status == "failed" ? "✗" : "·";
+                writer.WriteLine($"  {sym} {stage.Name,-24} {stage.Status,-8} {stage.DurationMs,6}ms");
+                if (stage.Message != null)
+                    writer.WriteLine($"      {stage.Message}");
             }
             writer.WriteLine();
         }

@@ -38,6 +38,21 @@ public static class InspectionReportWriter
         writer.WriteLine(report.Message);
         writer.WriteLine();
 
+        // Stage trace (M34)
+        if (report.Stages != null && report.Stages.Count > 0)
+        {
+            writer.WriteLine("## Workflow Trace");
+            writer.WriteLine();
+            writer.WriteLine("| Stage | Status | Duration | Message |");
+            writer.WriteLine("| --- | --- | --- | --- |");
+            foreach (var stage in report.Stages)
+            {
+                var icon = stage.Status == "passed" ? "✓" : stage.Status == "failed" ? "✗" : "·";
+                writer.WriteLine($"| {icon} {stage.Name} | {stage.Status} | {stage.DurationMs}ms | {EscapePipe(stage.Message ?? "—")} |");
+            }
+            writer.WriteLine();
+        }
+
         if (report.Requirements.Count == 0)
         {
             writer.WriteLine("_No requirements were evaluated._");
@@ -165,6 +180,27 @@ public static class InspectionReportWriter
                 writer.WriteLine($"  <span class=\"summary-skip\">— {notEvalCount} not evaluated</span>");
             writer.WriteLine($"  <span class=\"summary-total\">{totalCount} total requirement{(totalCount != 1 ? "s" : "")}</span>");
             writer.WriteLine("</div>");
+        }
+
+        // ─── Stage trace (M34) ──────────────────────────────────
+        if (report.Stages != null && report.Stages.Count > 0)
+        {
+            writer.WriteLine("<h2>Workflow Trace</h2>");
+            writer.WriteLine("<table class=\"rule-table\">");
+            writer.WriteLine("  <thead><tr><th>Stage</th><th>Status</th><th>Duration</th><th>Message</th></tr></thead>");
+            writer.WriteLine("  <tbody>");
+            foreach (var stage in report.Stages)
+            {
+                var icon = stage.Status == "passed" ? "✓" : stage.Status == "failed" ? "✗" : "·";
+                var stClass = StatusClass(stage.Status == "passed" ? "PASSED" : stage.Status == "failed" ? "FAILED" : "NOT_EVALUATED");
+                writer.WriteLine($"    <tr class=\"{stClass}\">" +
+                    $"<td>{icon} {HtmlEscape(stage.Name)}</td>" +
+                    $"<td><span class=\"status-badge tiny {stClass}\">{HtmlEscape(stage.Status)}</span></td>" +
+                    $"<td>{stage.DurationMs}ms</td>" +
+                    $"<td>{HtmlEscape(stage.Message ?? "—")}</td></tr>");
+            }
+            writer.WriteLine("  </tbody>");
+            writer.WriteLine("</table>");
         }
 
         // ─── Requirements ────────────────────────────────────────

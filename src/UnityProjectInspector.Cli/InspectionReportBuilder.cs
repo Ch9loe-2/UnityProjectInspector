@@ -1,5 +1,6 @@
 using UnityProjectInspector.Core.Assignments;
 using UnityProjectInspector.Core.Models.Rules;
+using UnityProjectInspector.Core.Trace;
 
 namespace UnityProjectInspector.Cli;
 
@@ -36,6 +37,20 @@ public static class InspectionReportBuilder
             {
                 report.Requirements.Add(BuildRequirement(rr));
             }
+        }
+
+        // Map Core stages to report stages (M34)
+        if (coreResult.Stages != null && coreResult.Stages.Count > 0)
+        {
+            report.Stages = coreResult.Stages
+                .Select(s => new CliStageInfo
+                {
+                    Name = s.Name,
+                    Status = s.Status,
+                    DurationMs = s.DurationMs,
+                    Message = s.Message,
+                })
+                .ToList();
         }
 
         return report;

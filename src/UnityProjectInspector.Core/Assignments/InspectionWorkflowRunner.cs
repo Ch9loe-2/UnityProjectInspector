@@ -2,6 +2,7 @@ using UnityProjectInspector.Core.Merge;
 using UnityProjectInspector.Core.Models.Rules;
 using UnityProjectInspector.Core.Runtime;
 using UnityProjectInspector.Core.Rules;
+using UnityProjectInspector.Core.Trace;
 
 namespace UnityProjectInspector.Core.Assignments;
 
@@ -60,11 +61,14 @@ public class InspectionWorkflowRunner
     /// When the runtime runner supports ISupportsSessionSharing, multiple
     /// RuntimeRequired requirements share a single Unity Player session.
     /// </summary>
+    /// <param name="stageCollector">Optional collector for M34 workflow stage trace.
+    /// When null, no stage trace is recorded.</param>
     public async Task<AssignmentInspectionResult> RunAsync(
         AssignmentDefinition assignment,
         InspectionContext context,
         RuntimeRunOptions? runtimeOptions = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        WorkflowStageCollector? stageCollector = null)
     {
         ArgumentNullException.ThrowIfNull(assignment);
         ArgumentNullException.ThrowIfNull(context);
@@ -94,7 +98,16 @@ public class InspectionWorkflowRunner
 
         if (_harnessDeployer != null && runtimeOptions != null && anyRuntimeRequired)
         {
-            harnessSnapshot = await _harnessDeployer.DeployAsync(runtimeOptions);
+            if (stageCollector != null)
+            {
+                harnessSnapshot = await stageCollector.RecordAsync(
+                    "deploy-harness",
+                    () => _harnessDeployer.DeployAsync(runtimeOptions));
+            }
+            else
+            {
+                harnessSnapshot = await _harnessDeployer.DeployAsync(runtimeOptions);
+            }
         }
 
         try
@@ -102,16 +115,29 @@ public class InspectionWorkflowRunner
             // Check if the runtime runner supports session sharing
             var sessionSharingRunner = _runtimeRunner as ISupportsSessionSharing;
 
+            AssignmentInspectionResult result;
+
             // Phase 3: Evaluate — with or without session sharing
             if (sessionSharingRunner != null)
             {
-                return await RunWithSessionSharingAsync(
-                    assignment, context, runtimeOptions, sessionSharingRunner, cancellationToken);
+                result = await RunWithSessionSharingAsync(
+                    assignment, context, runtimeOptions, sessionSharingRunner,
+                    cancellationToken, stageCollector);
+            }
+            else
+            {
+                // Fallback: per-requirement runner (backward compat)
+                result = await RunPerRequirementAsync(
+                    assignment, context, runtimeOptions, cancellationToken);
             }
 
-            // Fallback: per-requirement runner (backward compat)
-            return await RunPerRequirementAsync(
-                assignment, context, runtimeOptions, cancellationToken);
+            // Attach stages to result
+            if (stageCollector != null)
+            {
+                result.Stages = stageCollector.Stages.ToList();
+            }
+
+            return result;
         }
         finally
         {
@@ -133,7 +159,8 @@ public class InspectionWorkflowRunner
         InspectionContext context,
         RuntimeRunOptions? runtimeOptions,
         ISupportsSessionSharing sessionSharingRunner,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        WorkflowStageCollector? stageCollector = null)
     {
         var requirementResults = new List<RequirementInspectionResult>();
         var state = new SessionSharingState();
@@ -150,8 +177,18 @@ public class InspectionWorkflowRunner
         {
             try
             {
-                sharedScope = await sessionSharingRunner.CreateSessionAsync(
-                    runtimeOptions, cancellationToken);
+                if (stageCollector != null)
+                {
+                    sharedScope = await stageCollector.RecordAsync(
+                        "build-player",
+                        () => sessionSharingRunner.CreateSessionAsync(
+                            runtimeOptions, cancellationToken));
+                }
+                else
+                {
+                    sharedScope = await sessionSharingRunner.CreateSessionAsync(
+                        runtimeOptions, cancellationToken);
+                }
 
                 // If session creation failed (build/launch error), mark for later
                 if (sharedScope.IsFailed)
@@ -167,6 +204,7 @@ public class InspectionWorkflowRunner
 
         try
         {
+            var evalSw = stageCollector != null ? System.Diagnostics.Stopwatch.StartNew() : null;
             foreach (var req in assignment.Requirements)
             {
                 var result = await EvaluateRequirementWithSessionAsync(
@@ -174,6 +212,20 @@ public class InspectionWorkflowRunner
                     sharedScope, state, cancellationToken);
 
                 requirementResults.Add(result);
+            }
+
+            // Record evaluate-requirements stage with real timing (M34)
+            if (stageCollector != null)
+            {
+                evalSw!.Stop();
+                bool anyFailed = requirementResults.Any(r => r.Status == RuleStatus.Failed);
+                bool anyPassed = requirementResults.Any(r => r.Status == RuleStatus.Passed);
+                stageCollector.Add(new WorkflowStage
+                {
+                    Name = "evaluate-requirements",
+                    Status = anyFailed ? "failed" : (anyPassed ? "passed" : "skipped"),
+                    DurationMs = evalSw!.ElapsedMilliseconds,
+                });
             }
         }
         finally
@@ -185,8 +237,18 @@ public class InspectionWorkflowRunner
                 {
                     if (!sharedScope.IsFinalized)
                     {
-                        await sessionSharingRunner.FinalizeScopeAsync(
-                            sharedScope, CancellationToken.None);
+                        if (stageCollector != null)
+                        {
+                            await stageCollector.RecordAsync(
+                                "finalize-session",
+                                () => sessionSharingRunner.FinalizeScopeAsync(
+                                    sharedScope, CancellationToken.None));
+                        }
+                        else
+                        {
+                            await sessionSharingRunner.FinalizeScopeAsync(
+                                sharedScope, CancellationToken.None);
+                        }
                     }
                 }
                 catch
@@ -197,6 +259,11 @@ public class InspectionWorkflowRunner
                 {
                     sharedScope.Dispose();
                 }
+            }
+            else if (stageCollector != null && anyRuntimeRequired)
+            {
+                // Session was never created or is failed — mark finalize as skipped
+                stageCollector.RecordSkipped("finalize-session");
             }
         }
 

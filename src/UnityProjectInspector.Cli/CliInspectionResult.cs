@@ -19,6 +19,30 @@ public class CliInspectionResult
 
     [JsonPropertyName("requirements")]
     public List<CliRequirementResult> Requirements { get; init; } = new();
+
+    /// <summary>Workflow-level stage trace (M34). Null when no stage tracing was configured.</summary>
+    [JsonPropertyName("stages")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CliStageInfo>? Stages { get; init; }
+}
+
+/// <summary>
+/// Trace info for a single workflow stage (M34).
+/// </summary>
+public class CliStageInfo
+{
+    [JsonPropertyName("name")]
+    public required string Name { get; init; }
+
+    [JsonPropertyName("status")]
+    public required string Status { get; init; }
+
+    [JsonPropertyName("durationMs")]
+    public long DurationMs { get; init; }
+
+    [JsonPropertyName("message")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Message { get; init; }
 }
 
 public class CliRequirementResult

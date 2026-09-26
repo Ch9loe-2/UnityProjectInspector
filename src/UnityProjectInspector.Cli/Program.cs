@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using UnityProjectInspector.Core.Assignments;
 using UnityProjectInspector.Core.Merge;
@@ -5,6 +6,7 @@ using UnityProjectInspector.Core.Models.Rules;
 using UnityProjectInspector.Core.Parsing;
 using UnityProjectInspector.Core.Rules;
 using UnityProjectInspector.Core.Runtime;
+using UnityProjectInspector.Core.Trace;
 
 namespace UnityProjectInspector.Cli;
 
@@ -67,6 +69,9 @@ public static class Program
 
     private static async Task<int> RunAsync(string[] args)
     {
+        // ─── Stage Collector (M34) ──────────────────────────────
+        var stageCollector = new WorkflowStageCollector();
+
         // ─── Phase 0: Interactive mode entry ─────────────────────
         // When args are empty, or "inspect" is given without enough
         // arguments (missing --project or --assignment), enter interactive mode.
@@ -101,7 +106,9 @@ public static class Program
         }
 
         // ─── Phase 2: Validate inputs (before touching Unity) ────
-        var validationError = await ValidateInputsAsync(options);
+        var validationError = await stageCollector.RecordAsync(
+            "validate-inputs",
+            () => ValidateInputsAsync(options));
         if (validationError != null)
         {
             await Console.Error.WriteLineAsync($"Error: {validationError}");
@@ -112,7 +119,9 @@ public static class Program
         AssignmentDefinition assignment;
         try
         {
-            assignment = AssignmentLoader.Load(options.AssignmentPath);
+            assignment = await stageCollector.RecordAsync(
+                "load-assignment",
+                () => Task.FromResult(AssignmentLoader.Load(options.AssignmentPath)));
         }
         catch (FileNotFoundException ex)
         {
@@ -121,8 +130,6 @@ public static class Program
         }
         catch (JsonException ex)
         {
-            // Keep the first line of STJ's message — it is already human-readable
-            // (e.g. "The JSON value could not be converted to ...") without the stack.
             var firstLine = ex.Message.Split('\n')[0].Trim();
             await Console.Error.WriteLineAsync($"Error: Assignment JSON is not valid: {firstLine}");
             return (int)CliExitCode.InvalidInput;
@@ -139,8 +146,6 @@ public static class Program
         }
 
         // ─── Phase 3.5: CLI structural validation (front-door) ───
-        // Catches obviously-illegal configs (e.g. empty requirements) that Core's
-        // validator does not reject, before we invoke the inspection pipeline.
         var cliIssues = CliInputValidator.ValidateAssignment(assignment);
         if (cliIssues.Count > 0)
         {
@@ -172,7 +177,9 @@ public static class Program
         try
         {
             var scanner = new UnityProjectScanner();
-            var projectInfo = scanner.Scan(options.ProjectPath);
+            var projectInfo = stageCollector.Record(
+                "scan-project",
+                () => scanner.Scan(options.ProjectPath));
 
             if (!projectInfo.IsValid)
             {
@@ -228,6 +235,9 @@ public static class Program
                 ProjectPath = Path.GetFullPath(options.ProjectPath),
             };
         }
+        // Static-only path: runtime-only stages (deploy-harness, build-player,
+        // player-startup, finalize-session) are OMITTED entirely — not recorded
+        // as "skipped". The output only contains stages that actually executed.
 
         // ─── Phase 7: Construct Core pipeline & run ──────────────
         AssignmentInspectionResult coreResult;
@@ -252,7 +262,8 @@ public static class Program
                 ruleEngine, runtimeRunner, harnessDeployer);
 
             coreResult = await workflowRunner.RunAsync(
-                assignment, context, runtimeOptions);
+                assignment, context, runtimeOptions,
+                CancellationToken.None, stageCollector);
         }
         catch (Exception ex)
         {
@@ -261,6 +272,7 @@ public static class Program
         }
 
         // ─── Phase 8: Format & output result ─────────────────────
+        var reportSw = Stopwatch.StartNew();
         var cliResult = ResultFormatter.ToCliResult(coreResult);
 
         // Output directory
@@ -319,14 +331,12 @@ public static class Program
         }
 
         // ─── Phase 8.5: Export detailed inspection report (M32) ──
-        // Independent of --format: the console output above is unaffected. The report
-        // preserves rule-level detail (static RuleResults + merged runtime evidence)
-        // that the console DTO intentionally drops, for audit / evidence export.
         if (!string.IsNullOrWhiteSpace(options.ReportPath))
         {
             try
             {
                 var report = InspectionReportBuilder.Build(coreResult);
+
                 var reportFullPath = Path.GetFullPath(options.ReportPath);
 
                 var parentDir = Path.GetDirectoryName(reportFullPath);
@@ -357,8 +367,50 @@ public static class Program
             }
         }
 
+        // Record generate-report stage (covers Phase 8 + Phase 8.5)
+        reportSw.Stop();
+        stageCollector.Add(new WorkflowStage
+        {
+            Name = "generate-report",
+            Status = "passed",
+            DurationMs = reportSw.ElapsedMilliseconds,
+        });
+
+        // Build complete stage list and attach to cliResult
+        var cliStages = BuildCliStageList(stageCollector);
+        cliResult = new CliInspectionResult
+        {
+            Status = cliResult.Status,
+            Message = cliResult.Message,
+            Requirements = cliResult.Requirements,
+            Stages = cliStages,
+        };
+
         // ─── Phase 9: Exit code ──────────────────────────────────
         return (int)CliResultMapping.FromFinalStatus(coreResult.FinalStatus);
+    }
+
+    /// <summary>
+    /// Builds the complete stage list from the collector's recorded stages.
+    /// The generate-report stage is already recorded by the caller before this call.
+    /// </summary>
+    private static List<CliStageInfo> BuildCliStageList(
+        WorkflowStageCollector collector)
+    {
+        var allStages = new List<CliStageInfo>();
+
+        foreach (var stage in collector.Stages)
+        {
+            allStages.Add(new CliStageInfo
+            {
+                Name = stage.Name,
+                Status = stage.Status,
+                DurationMs = stage.DurationMs,
+                Message = stage.Message,
+            });
+        }
+
+        return allStages;
     }
 
     /// <summary>

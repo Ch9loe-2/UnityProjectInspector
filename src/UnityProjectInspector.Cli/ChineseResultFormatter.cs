@@ -125,6 +125,28 @@ public static class ChineseResultFormatter
             writer.WriteLine();
         }
 
+        // Stage trace (M34)
+        if (result.Stages != null && result.Stages.Count > 0)
+        {
+            writer.WriteLine("工作流程跟踪:");
+            writer.WriteLine("──────────────");
+            foreach (var stage in result.Stages)
+            {
+                var sym = stage.Status == "passed" ? "✓" : stage.Status == "failed" ? "✗" : "·";
+                var statusCn = stage.Status switch
+                {
+                    "passed" => "通过",
+                    "failed" => "失败",
+                    "skipped" => "跳过",
+                    _ => stage.Status,
+                };
+                writer.WriteLine($"  {sym} {stage.Name,-24} {statusCn,-6} {stage.DurationMs,6}ms");
+                if (stage.Message != null)
+                    writer.WriteLine($"      {stage.Message}");
+            }
+            writer.WriteLine();
+        }
+
         writer.WriteLine(result.Message);
     }
 }

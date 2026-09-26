@@ -1,4 +1,5 @@
 using UnityProjectInspector.Core.Models.Rules;
+using UnityProjectInspector.Core.Trace;
 
 namespace UnityProjectInspector.Core.Assignments;
 
@@ -35,4 +36,11 @@ public class AssignmentInspectionResult
     /// Human-readable message summarizing the assignment outcome.
     /// </summary>
     public required string Message { get; init; }
+
+    /// <summary>
+    /// Workflow-level stage trace (M34). Records each major pipeline stage
+    /// with its status, duration, and optional error message.
+    /// Null when no stage tracing was configured for this run.
+    /// </summary>
+    public List<WorkflowStage>? Stages { get; set; }
 }
