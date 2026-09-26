@@ -18,8 +18,15 @@ public class CliOptions
     /// <summary>Output directory for results (optional, defaults to current directory).</summary>
     public string OutputDirectory { get; init; } = ".";
 
-    /// <summary>Output format: "text" or "json" (default: "text").</summary>
+    /// <summary>Output format: "text", "json", or "chinese" (default: "text").</summary>
     public string Format { get; init; } = "text";
+
+    /// <summary>
+    /// Optional path to write a detailed inspection report. Format is inferred from
+    /// the file extension: <c>.json</c> → JSON, <c>.md</c>/<c>.markdown</c> → Markdown.
+    /// Independent of <see cref="Format"/>; the console output is unaffected.
+    /// </summary>
+    public string? ReportPath { get; init; }
 
     /// <summary>
     /// When true, unexpected internal errors print the full exception stack trace.

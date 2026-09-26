@@ -21,6 +21,7 @@ Options:
   --unity <path>        Unity Editor executable path (optional, auto-detect)
   --output <path>       Output directory (optional, default: current directory)
   --format <format>     Output format: text | json | chinese (optional, default: text)
+  --report <path>       Write a detailed inspection report (.json/.md); format inferred from extension (optional)
   --debug               Show full error details on internal failures (optional)
   --help                Show this help
 
@@ -73,6 +74,7 @@ Examples:
         string? unityPath = null;
         string? outputDir = null;
         string? format = null;
+        string? reportPath = null;
         bool debug = false;
 
         for (int i = 0; i < remaining.Count; i++)
@@ -127,6 +129,9 @@ Examples:
                 case "--format":
                     format = value;
                     break;
+                case "--report":
+                    reportPath = value;
+                    break;
                 case "--debug":
                 case "--verbose":
                     debug = true;
@@ -153,6 +158,7 @@ Examples:
             UnityExecutable = unityPath,
             OutputDirectory = outputDir ?? ".",
             Format = format ?? "text",
+            ReportPath = reportPath,
             Debug = debug,
         };
 

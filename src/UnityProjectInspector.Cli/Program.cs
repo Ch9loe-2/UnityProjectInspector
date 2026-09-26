@@ -318,6 +318,41 @@ public static class Program
             ResultFormatter.WriteText(cliResult, Console.Out);
         }
 
+        // ─── Phase 8.5: Export detailed inspection report (M32) ──
+        // Independent of --format: the console output above is unaffected. The report
+        // preserves rule-level detail (static RuleResults + merged runtime evidence)
+        // that the console DTO intentionally drops, for audit / evidence export.
+        if (!string.IsNullOrWhiteSpace(options.ReportPath))
+        {
+            try
+            {
+                var report = InspectionReportBuilder.Build(coreResult);
+                var reportFullPath = Path.GetFullPath(options.ReportPath);
+
+                var parentDir = Path.GetDirectoryName(reportFullPath);
+                if (!string.IsNullOrEmpty(parentDir))
+                {
+                    Directory.CreateDirectory(parentDir);
+                }
+
+                using var reportWriter = new StreamWriter(reportFullPath);
+                if (IsMarkdownReport(reportFullPath))
+                {
+                    InspectionReportWriter.WriteMarkdown(report, reportWriter);
+                }
+                else
+                {
+                    InspectionReportWriter.WriteJson(report, reportWriter);
+                }
+
+                await Console.Out.WriteLineAsync($"Inspection report written to: {reportFullPath}");
+            }
+            catch (Exception ex)
+            {
+                await Console.Error.WriteLineAsync($"Warning: Could not write inspection report: {ex.Message}");
+            }
+        }
+
         // ─── Phase 9: Exit code ──────────────────────────────────
         return (int)CliResultMapping.FromFinalStatus(coreResult.FinalStatus);
     }
@@ -367,6 +402,17 @@ public static class Program
             if (parentDir != null && !Directory.Exists(parentDir))
             {
                 return $"Output directory parent does not exist: {parentDir}";
+            }
+        }
+
+        // Report file (M32): the parent directory of the report path must exist
+        // (the report file itself is created at write time). Mirrors --output behavior.
+        if (!string.IsNullOrWhiteSpace(options.ReportPath))
+        {
+            var reportParent = Path.GetDirectoryName(Path.GetFullPath(options.ReportPath));
+            if (reportParent != null && !Directory.Exists(reportParent))
+            {
+                return $"Report output directory does not exist: {reportParent}";
             }
         }
 
@@ -434,6 +480,17 @@ public static class Program
                 return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Infers the inspection report format from the --report file extension.
+    /// <c>.md</c> / <c>.markdown</c> → Markdown; any other extension → JSON.
+    /// </summary>
+    private static bool IsMarkdownReport(string reportPath)
+    {
+        var ext = Path.GetExtension(reportPath);
+        return string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
