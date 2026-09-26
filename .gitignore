@@ -32,7 +32,6 @@ m33-reports/
 
 # Excluded project items
 .workbuddy/
-docs/M14_RuntimeFlow_Architecture_Audit.md
 experiments/M11_RuntimeChannel/
 experiments/GenericUnityRuntimeHarness/Library/
 experiments/GenericUnityRuntimeHarness/Build/
