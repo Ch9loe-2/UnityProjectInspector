@@ -30,6 +30,9 @@ packages/
 # M33 E2E report artifacts
 m33-reports/
 
+# DragCheck compiled app bundle (regenerate via osacompile)
+tools/DragCheck/*.app/
+
 # Excluded project items
 .workbuddy/
 experiments/M11_RuntimeChannel/

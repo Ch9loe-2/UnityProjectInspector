@@ -48,6 +48,29 @@ Demo 会自动定位仓库、构建 CLI、执行**成功案例**和**故意失�
 
 你不需要安装 Unity Editor，甚至不需要知道 CLI 的存在。
 
+## One-Click Inspection Tool（一键检查工具，小白版）
+
+`tools/DragCheck/` 提供"拖拽即检查"的免配置入口：不需要记命令、不需要手写 JSON。
+
+### 用法（macOS）
+
+1. 把仓库里的 `Unity工程一键检查.app` 放到"应用程序"或桌面（或直接用下面的命令行）；
+2. 把 Unity 工程 **zip 压缩包**（或整个工程文件夹）拖到应用图标上；
+3. 自动完成：解压 → 校验工程结构 → 自动生成检查方案 → 运行静态检查 → 弹出中文 HTML 体检报告（结论横幅、统计卡片、检查明细、场景对象清单）。
+
+命令行等价写法：
+
+```bash
+bash tools/DragCheck/check_unity_project.sh /path/to/YourUnityProject.zip
+bash tools/DragCheck/check_unity_project.sh /path/to/YourUnityProject/
+```
+
+### 说明
+
+- 纯静态检查，无需 Unity Editor；
+- `.app` 为本地编译产物（不入库），可用 `osacompile` 从目录内脚本重新生成；
+- 报告渲染依赖系统 `python3`。
+
 ## Quick Start（CLI — 命令行使用）
 
 无需安装 Unity、无需任何真实 Unity 项目，即可在本地复现完整的**静态检测**流程。
