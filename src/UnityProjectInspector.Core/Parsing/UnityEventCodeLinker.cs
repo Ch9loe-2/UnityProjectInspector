@@ -17,6 +17,15 @@ public class UnityEventCodeLinker
     private readonly CSharpAnalyzer _csharpAnalyzer;
 
     /// <summary>
+    /// Cache of analyzed C# files keyed by absolute script path.
+    /// Multiple UnityEvent bindings often point at the same script; without this
+    /// cache each binding would re-run a full Roslyn parse of the same file.
+    /// The linker instance lives for one inspection run, so the cache never
+    /// outlives the files it was built from.
+    /// </summary>
+    private readonly Dictionary<string, CSharpFileInfo> _analysisCache = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Creates a linker that resolves scripts from the given Unity project root.
     /// </summary>
     public UnityEventCodeLinker(string projectRootPath)
@@ -90,11 +99,11 @@ public class UnityEventCodeLinker
 
         link.ScriptPath = scriptInfo.ScriptPath;
 
-        // Step 3: Parse the .cs file with CSharpAnalyzer
+        // Step 3: Parse the .cs file with CSharpAnalyzer (cached per script path)
         CSharpFileInfo? csFileInfo;
         try
         {
-            csFileInfo = _csharpAnalyzer.AnalyzeFile(scriptInfo.ScriptPath);
+            csFileInfo = GetOrAnalyze(scriptInfo.ScriptPath);
         }
         catch
         {
@@ -206,6 +215,23 @@ public class UnityEventCodeLinker
         }
 
         return link;
+    }
+
+    /// <summary>
+    /// Analyzes a script file, reusing the cached result when the same path is
+    /// requested again within this linker instance. Failures are NOT cached so a
+    /// transient failure is not permanently pinned to the path.
+    /// </summary>
+    private CSharpFileInfo GetOrAnalyze(string scriptPath)
+    {
+        if (_analysisCache.TryGetValue(scriptPath, out var cached))
+        {
+            return cached;
+        }
+
+        var result = _csharpAnalyzer.AnalyzeFile(scriptPath);
+        _analysisCache[scriptPath] = result;
+        return result;
     }
 
     /// <summary>
