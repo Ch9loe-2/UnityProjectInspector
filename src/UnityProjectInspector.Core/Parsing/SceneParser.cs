@@ -107,18 +107,31 @@ public partial class SceneParser
             }
         }
 
-        // Step 3: Build Transform fileId -> GameObject fileId mapping
+        // Step 3: Build Transform fileId -> GameObject fileId mapping,
+        // plus a reverse index (GameObject -> Transform fileIds) so Step 5
+        // can resolve parents in O(1) instead of an O(N^2) linear scan.
         var transformOfGameObject = new Dictionary<long, long>(); // Transform fileId -> GameObject fileId
+        var goToTransformFileIds = new Dictionary<long, List<long>>(); // GameObject fileId -> Transform fileIds
+        var goComponentRefs = new Dictionary<long, List<long>>(); // GameObject fileId -> component refs (parsed once)
 
         foreach (var goBlock in gameObjectBlocks)
         {
             var componentRefs = ParseComponentReferences(goBlock.RawPropertiesJoined);
+            goComponentRefs[goBlock.FileId] = componentRefs;
+
             foreach (var compFileId in componentRefs)
             {
                 if (componentBlocks.TryGetValue(compFileId, out var compBlock) &&
                     compBlock.TypeName is "Transform" or "RectTransform")
                 {
                     transformOfGameObject[compFileId] = goBlock.FileId;
+
+                    if (!goToTransformFileIds.TryGetValue(goBlock.FileId, out var tfIds))
+                    {
+                        goToTransformFileIds[goBlock.FileId] = tfIds = new List<long>();
+                    }
+                    tfIds.Add(compFileId);
+
                     break;
                 }
             }
@@ -149,14 +162,12 @@ public partial class SceneParser
             var goName = ParseGameObjectName(goBlock.RawPropertiesJoined);
 
             // Resolve parent GameObject's fileId:
-            //   1. Find this GO's Transform fileId
+            //   1. Find this GO's Transform fileId (via the reverse index)
             //   2. Look up that Transform's father Transform fileId
             //   3. Map father Transform fileId back to its GameObject fileId
             long parentFileId = 0;
-            var ourTfFileIds = transformOfGameObject
-                .Where(kvp => kvp.Value == goBlock.FileId)
-                .Select(kvp => kvp.Key)
-                .ToList();
+            goToTransformFileIds.TryGetValue(goBlock.FileId, out var ourTfFileIds);
+            ourTfFileIds ??= new List<long>();
 
             foreach (var ourTfFileId in ourTfFileIds)
             {
@@ -175,8 +186,10 @@ public partial class SceneParser
                 ParentFileId = parentFileId,
             };
 
-            // Add linked components
-            var componentRefs = ParseComponentReferences(goBlock.RawPropertiesJoined);
+            // Add linked components (refs were parsed once in Step 3 and reused here)
+            var componentRefs = goComponentRefs.TryGetValue(goBlock.FileId, out var cachedRefs)
+                ? cachedRefs
+                : ParseComponentReferences(goBlock.RawPropertiesJoined);
             foreach (var compFileId in componentRefs)
             {
                 if (componentBlocks.TryGetValue(compFileId, out var compBlock))
