@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using UnityProjectInspector.Core.Assignments;
 using UnityProjectInspector.Core.Merge;
+using UnityProjectInspector.Core.Models;
 using UnityProjectInspector.Core.Models.Rules;
 using UnityProjectInspector.Core.Parsing;
 using UnityProjectInspector.Core.Rules;
@@ -189,9 +190,54 @@ public static class Program
                 return (int)CliExitCode.InvalidInput;
             }
 
+            // ── Wire static evidence data (UnityEvent bindings, code links, script map) ──
+            // UnityEventBindingRule, CodeEvidenceRule and ScriptAttachedRule evaluate
+            // against pre-computed context data. Without this wiring those rules
+            // always fail / stay unevaluated (empty EventBindings/CodeLinks/ScriptMap).
+            var resolver = new ScriptResolver(options.ProjectPath);
+            var eventParser = new UnityEventParser();
+            var linker = new UnityEventCodeLinker(options.ProjectPath);
+
+            var allBindings = new List<UnityEventBindingInfo>();
+            var allCodeLinks = new List<UnityEventCodeLink>();
+            var goScriptNames = new Dictionary<long, List<string>>();
+
+            foreach (var scene in projectInfo.Scenes)
+            {
+                var sceneText = File.ReadAllText(scene.FilePath);
+                var bindings = eventParser.Parse(sceneText, scene);
+                var links = linker.Link(bindings, scene);
+
+                allBindings.AddRange(bindings);
+                allCodeLinks.AddRange(links);
+
+                foreach (var go in scene.GameObjects)
+                {
+                    var names = new List<string>();
+                    foreach (var comp in go.Components)
+                    {
+                        if (comp.ScriptGuid != null)
+                        {
+                            var scriptInfo = resolver.ResolveRaw(comp.ScriptGuid);
+                            if (scriptInfo?.IsResolved == true)
+                            {
+                                names.Add(scriptInfo.ScriptName);
+                            }
+                        }
+                    }
+                    if (names.Count > 0)
+                    {
+                        goScriptNames[go.FileId] = names;
+                    }
+                }
+            }
+
             context = new InspectionContext
             {
                 ProjectInfo = projectInfo,
+                EventBindings = allBindings,
+                CodeLinks = allCodeLinks,
+                GameObjectScriptNames = goScriptNames,
             };
         }
         catch (DirectoryNotFoundException ex)
