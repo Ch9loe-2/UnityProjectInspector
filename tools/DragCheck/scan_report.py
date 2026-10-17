@@ -6,12 +6,89 @@ UnityProjectInspector 一键检查辅助脚本
   scan_report.py gen-assignment <工程目录> <输出assignment.json>
   scan_report.py render-report <工程目录> <cli结果.json> <输出报告.html>
 """
-import html
+import html as html_mod
 import json
 import os
 import re
 import sys
 import datetime
+
+RULE_TYPE_CN = {
+    "SceneExists": "场景存在",
+    "GameObjectExists": "游戏对象存在",
+    "ComponentExists": "组件存在",
+    "GameObjectHierarchy": "游戏对象层级",
+    "ScriptAttached": "脚本挂载",
+    "FileExists": "文件存在",
+    "UnityEventBinding": "UnityEvent 绑定",
+    "CodeEvidence": "代码证据",
+}
+
+
+def suggest_fix(ev):
+    """小白向修复建议：哪错了 + 怎么改（与 CLI 中文输出文案一致）。
+
+    ev 来自 CLI --format json 的 ruleEvidence 项：
+    {ruleType, target, expected, actual, reason, ...}
+    """
+    rtype = ev.get("ruleType", "")
+    actual = ev.get("actual", "")
+    target = ev.get("target", "") or ""
+    expected = ev.get("expected", "") or ""
+    reason = ev.get("reason", "") or ""
+
+    if rtype == "SceneExists" and actual == "not found":
+        if "no scenes" in reason:
+            return "工程里一个场景都没有。检查：场景是否已保存（Ctrl+S）到 Assets/Scenes 文件夹下。"
+        return "没找到叫「%s」的场景。检查：场景文件名是否完全一致（含大小写）、是否在 Assets/Scenes 文件夹下。" % target
+
+    if rtype == "GameObjectExists" and actual == "not found":
+        return "没找到叫「%s」的对象。检查：对象名是否完全一致（注意大小写和空格）、是否真的创建了、是否在别的场景里。" % target
+
+    if rtype == "ComponentExists" and actual == "not found":
+        return "「%s」对象上没找到「%s」组件。检查：选中该对象后，在 Inspector 里用 Add Component 添加「%s」。" % (target, expected, expected)
+
+    if rtype == "FileExists":
+        if actual == "not found":
+            return "文件「%s」不存在。检查：路径和文件名是否完全一致（含大小写）、文件是否真的在工程里。" % target
+        if actual == "invalid":
+            return "文件路径写法不对：%s。检查：assignment 里填的是工程内相对路径（如 Assets/Scripts/X.cs）。" % reason
+
+    if rtype == "ScriptAttached":
+        if actual == "not found":
+            return "没找到对象「%s」。先检查对象是否存在、名字是否正确。" % target
+        if actual == "wrong script":
+            return "「%s」上挂的脚本不是「%s」。检查：把「%s」脚本拖到该对象的 Inspector 上（脚本文件名要和类名一致）。" % (target, expected, expected)
+        if actual == "no scripts":
+            return "「%s」上没挂任何脚本。检查：把「%s」脚本拖到该对象的 Inspector 上。" % (target, expected)
+
+    if rtype == "GameObjectHierarchy":
+        if actual == "not found":
+            return "没找到子对象「%s」。检查子对象名字是否正确、是否真的创建了。" % target
+        if actual == "no parent":
+            return "「%s」现在是根对象（没有父级）。检查：在 Hierarchy 面板里把它拖到「%s」下面。" % (target, expected)
+        if actual == "wrong parent":
+            return "「%s」的父级不对。检查：在 Hierarchy 面板里把它拖到「%s」下面，确保层级正确。" % (target, expected)
+
+    if rtype == "UnityEventBinding":
+        if actual == "no bindings":
+            return "「%s」上没有绑定任何事件。检查：在 Inspector 的 OnClick 列表里点 + 添加事件。" % target
+        if actual == "method not found":
+            return "「%s」的事件绑定到方法「%s」，但代码里没找到。检查：方法名是否一致、方法是否写成了 public。" % (target, expected)
+        if actual == "wrong class":
+            return "事件绑定的脚本类不对：%s。检查：事件是否绑定到了正确的脚本和对象上。" % reason
+
+    if rtype == "CodeEvidence":
+        if actual == "no chain":
+            return "代码里没找到从「%s」到「%s」的调用。检查：脚本里是否真的调用了「%s」、方法名是否一致。" % (target, expected, expected)
+        if actual == "broken":
+            return "调用链断了：%s。检查：调用的目标对象/方法是否真实存在、名字是否正确。" % reason
+        if actual == "call not found":
+            return "代码里没找到调用「%s」。检查：方法名、调用语句是否真的写了。" % expected
+
+    if reason:
+        return "对照规则要求检查「%s」（期望：%s）：核对名称拼写和工程里的实际情况。" % (target, expected)
+    return "对照规则要求检查名称、拼写和工程里的实际情况。"
 
 
 def find_scenes(project):
@@ -151,7 +228,7 @@ def render_tree_html(tree):
         return '<span class="muted">（未解析到对象，或场景为空）</span>'
     items = []
     for node in tree:
-        name = html.escape(node["name"])
+        name = html_mod.escape(node["name"])
         kids = node["children"]
         if kids:
             inner = '<details open><summary>%s</summary>%s</details>' % (
@@ -182,7 +259,7 @@ def render_report(project, result_json_path, out_path):
     proj_name = os.path.basename(os.path.normpath(project))
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # 检查项行
+    # 检查项行（失败项附带规则证据 + 小白修复建议）
     req_rows = []
     for r in reqs:
         st = r.get("status", "UNKNOWN")
@@ -192,10 +269,32 @@ def render_report(project, result_json_path, out_path):
             badge = '<span class="badge bad">✗ 未通过</span>'
         else:
             badge = '<span class="badge warn">— 未评估</span>'
+
+        # 失败项：列出失败规则证据 + 修复建议
+        fail_items = ""
+        if st == "FAILED":
+            for ev in r.get("ruleEvidence", []):
+                if ev.get("status") != "FAILED":
+                    continue
+                rtype_cn = RULE_TYPE_CN.get(ev.get("ruleType", ""), ev.get("ruleType", "规则"))
+                tgt = ev.get("target") or ""
+                tgt_html = " - " + html_mod.escape(tgt) if tgt else ""
+                fix = html_mod.escape(suggest_fix(ev))
+                fail_items += (
+                    '<div class="rule-ev"><div class="rule-ev-name">✗ %s%s</div>'
+                    '<div class="rule-ev-fix">建议：%s</div></div>'
+                    % (html_mod.escape(rtype_cn), tgt_html, fix)
+                )
+        if fail_items:
+            fail_html = '<div class="rule-fails">%s</div>' % fail_items
+        else:
+            fail_html = ""
+
         req_rows.append(
             '<div class="req"><div class="req-head"><span class="req-name">%s</span>%s</div>'
-            '<div class="req-msg">%s</div></div>'
-            % (r.get("name", r.get("id", "?")), badge, r.get("message", ""))
+            '<div class="req-msg">%s</div>%s</div>'
+            % (html_mod.escape(r.get("name", r.get("id", "?"))), badge,
+               html_mod.escape(r.get("message", "")), fail_html)
         )
     req_html = "\n".join(req_rows) if req_rows else '<div class="req">无检查项</div>'
 
@@ -238,6 +337,12 @@ def render_report(project, result_json_path, out_path):
   .req-head { display: flex; justify-content: space-between; align-items: center; }
   .req-name { font-weight: 600; font-size: 14px; }
   .req-msg { color: #6b7280; font-size: 12px; margin-top: 4px; }
+  .rule-fails { margin-top: 6px; border-top: 1px dashed #e5e7eb; padding-top: 6px; }
+  .rule-ev { margin: 4px 0; }
+  .rule-ev-name { font-size: 12px; font-weight: 600; color: #b91c1c; }
+  .rule-ev-fix { font-size: 12px; color: #374151; background: #fefce8;
+                 border: 1px solid #fde68a; border-radius: 6px; padding: 5px 8px;
+                 margin-top: 2px; }
   .badge { font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
   .badge.ok { background: #dcfce7; color: #15803d; }
   .badge.bad { background: #fee2e2; color: #b91c1c; }

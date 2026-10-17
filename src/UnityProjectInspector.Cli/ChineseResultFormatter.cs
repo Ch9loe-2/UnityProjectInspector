@@ -42,6 +42,88 @@ public static class ChineseResultFormatter
     }
 
     /// <summary>
+    /// Produces a beginner-friendly fix hint for a FAILED rule evidence.
+    /// Plain Chinese: what is probably wrong + how to fix it in Unity.
+    /// Falls back to a generic hint when the specific pattern is unknown.
+    /// </summary>
+    public static string SuggestFix(CliRuleEvidence ev)
+    {
+        var type = ev.RuleType ?? string.Empty;
+        var actual = ev.Actual ?? string.Empty;
+        var target = ev.Target ?? string.Empty;
+        var expected = ev.Expected ?? string.Empty;
+
+        switch (type)
+        {
+            case "SceneExists":
+                if (actual == "not found")
+                {
+                    if (ev.Reason?.Contains("no scenes") == true)
+                        return "工程里一个场景都没有。检查：场景是否已保存（Ctrl+S）到 Assets/Scenes 文件夹下。";
+                    return $"没找到叫「{target}」的场景。检查：场景文件名是否完全一致（含大小写）、是否在 Assets/Scenes 文件夹下。";
+                }
+                break;
+
+            case "GameObjectExists":
+                if (actual == "not found")
+                    return $"没找到叫「{target}」的对象。检查：对象名是否完全一致（注意大小写和空格）、是否真的创建了、是否在别的场景里。";
+                break;
+
+            case "ComponentExists":
+                if (actual == "not found")
+                    return $"「{target}」对象上没找到「{expected}」组件。检查：选中该对象后，在 Inspector 里用 Add Component 添加「{expected}」。";
+                break;
+
+            case "FileExists":
+                if (actual == "not found")
+                    return $"文件「{target}」不存在。检查：路径和文件名是否完全一致（含大小写）、文件是否真的在工程里。";
+                if (actual == "invalid")
+                    return $"文件路径写法不对：{ev.Reason}。检查：assignment 里填的是工程内相对路径（如 Assets/Scripts/X.cs）。";
+                break;
+
+            case "ScriptAttached":
+                if (actual == "not found")
+                    return $"没找到对象「{target}」。先检查对象是否存在、名字是否正确。";
+                if (actual == "wrong script")
+                    return $"「{target}」上挂的脚本不是「{expected}」。检查：把「{expected}」脚本拖到该对象的 Inspector 上（脚本文件名要和类名一致）。";
+                if (actual == "no scripts")
+                    return $"「{target}」上没挂任何脚本。检查：把「{expected}」脚本拖到该对象的 Inspector 上。";
+                break;
+
+            case "GameObjectHierarchy":
+                if (actual == "not found")
+                    return $"没找到子对象「{target}」。检查子对象名字是否正确、是否真的创建了。";
+                if (actual == "no parent")
+                    return $"「{target}」现在是根对象（没有父级）。检查：在 Hierarchy 面板里把它拖到「{expected}」下面。";
+                if (actual == "wrong parent")
+                    return $"「{target}」的父级不对。检查：在 Hierarchy 面板里把它拖到「{expected}」下面，确保层级正确。";
+                break;
+
+            case "UnityEventBinding":
+                if (actual == "no bindings")
+                    return $"「{target}」上没有绑定任何事件。检查：在 Inspector 的 OnClick 列表里点 + 添加事件。";
+                if (actual == "method not found")
+                    return $"「{target}」的事件绑定到方法「{expected}」，但代码里没找到。检查：方法名是否一致、方法是否写成了 public。";
+                if (actual == "wrong class")
+                    return $"事件绑定的脚本类不对：{ev.Reason}。检查：事件是否绑定到了正确的脚本和对象上。";
+                break;
+
+            case "CodeEvidence":
+                if (actual == "no chain")
+                    return $"代码里没找到从「{target}」到「{expected}」的调用。检查：脚本里是否真的调用了「{expected}」、方法名是否一致。";
+                if (actual == "broken")
+                    return $"调用链断了：{ev.Reason}。检查：调用的目标对象/方法是否真实存在、名字是否正确。";
+                if (actual == "call not found")
+                    return $"代码里没找到调用「{expected}」。检查：方法名、调用语句是否真的写了。";
+                break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ev.Reason))
+            return $"对照规则要求检查「{target}」（期望：{expected}）：核对名称拼写和工程里的实际情况。";
+        return "对照规则要求检查名称、拼写和工程里的实际情况。";
+    }
+
+    /// <summary>
     /// Writes a detailed Chinese-language inspection result to the specified TextWriter.
     /// Includes: overall result, per-requirement details with Chinese status, and pass/fail statistics.
     /// </summary>
@@ -110,6 +192,8 @@ public static class ChineseResultFormatter
                             writer.WriteLine($"      来源: {ev.Source}");
                         if (ev.Reason != null)
                             writer.WriteLine($"      原因: {ev.Reason}");
+                        if (ev.Status == "FAILED")
+                            writer.WriteLine($"      建议: {SuggestFix(ev)}");
                     }
                 }
 
