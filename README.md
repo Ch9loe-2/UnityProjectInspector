@@ -1,684 +1,115 @@
 # UnityProjectInspector
 
-Unity 项目静态分析与运行时检测工具。给定一个 Unity 项目和一个 **Assignment**（一组检查需求），
-它对项目执行检查并输出通过 / 失败结果，支持纯静态分析和"启动 Unity Player 运行时验证"两种模式。
+一个检查 Unity 工程是否满足要求的命令行工具。你把"工程里该有什么"写成一份 JSON 检查方案，它逐条核对，输出通过/失败和带证据的报告，不用人工打开 Unity 翻。
 
-## 功能全景（一个核心，四层）
+两种检查模式：
 
-> **这个项目只做一件事：检查 Unity 项目是否满足要求**——其余都是围绕它的入口、能力与输出。
+- **静态检查**：翻工程文件，核对场景、脚本、对象、组件等是否存在。秒级，不需要装 Unity。
+- **运行时检查**：临时往工程部署一段测试代码，启动 Unity 实际跑一遍，验证运行时行为（例如启动后激活场景）。分钟级，需要本机有 Unity。
 
-```
-第 1 层 · 入口（怎么发起检查）
-   一键拖拽 App（macOS，小白零门槛，自包含免安装）｜ 拖拽 .bat（Windows）
-   一键 Demo（演示）｜ CLI 命令（开发者 / CI）
+## 快速开始
 
-第 2 层 · 核心闭环（它做了什么）
-   写要求（Assignment JSON） → 跑检查（对工程逐条核对） → 出报告（✓/✗ + 证据 + 小白建议）
+### 直接用成品（适合老师、同学）
 
-第 3 层 · 检查能力（拿什么核对）
-   静态检查：翻文件看"有没有"——8 种规则，秒级，不需要 Unity
-   运行时检查：启动游戏看"对不对"——4 种动作 + 2 种断言，分钟级，需要 Unity
+两个平台都是零依赖的成品包，解压即用，把学生的工程 zip 拖上去，自动完成解压 → 生成检查方案 → 静态检查 → 打开中文体检报告。
 
-第 4 层 · 输出（结果怎么给你）
-   文本 ｜ JSON（可接 CI）｜ 中文 ｜ HTML 体检报告（层级树 + 修复建议）｜ 证据链（结果可解释）｜ 退出码（0/1/2/3/4）
-```
+- macOS：`Unity工程一键检查.app.zip`，拖到 App 图标上
+- Windows：`Unity工程一键检查_Windows.zip`，拖到 `check_unity_project.bat` 上
 
-性能：大场景解析提速 **4.4×**（2 万对象 366ms → 83ms）；同一脚本多事件绑定重复解析消除，**24×**（284ms → 12ms）。
+体检报告含结论、统计、检查明细、场景层级树（Unity Hierarchy 风格）和失败项的修复建议。相关脚本在 `tools/DragCheck/`（macOS 的 `.app` 由 `osacompile` 生成，不入库）。
 
-快速上手：**老师 / 小白（macOS）** → 下载 `Unity工程一键检查.app.zip`（约 40MB，解压即用，不需要装任何东西），把学生工程 zip 拖到 App 图标上；**老师 / 小白（Windows）** → 下载 `Unity工程一键检查_Windows.zip`，把工程 zip 拖到 `check_unity_project.bat` 上；**演示** → 双击 `Demo.command`；**开发者** → 见下方 Quick Start。
+双击 `Demo.command` 可以看一个免命令的演示（成功 + 故意失败两个案例）。
 
-## What it does
-
-教师或评审者可以用统一的 JSON 描述"一个 Unity 项目应当满足哪些要求"（例如"必须存在
-`TrainingScene` 场景"、"运行时启动后当前激活场景应为 `TrainingScene`"），然后用本工具对学生的
-Unity 项目自动核验，而不需要人工打开 Unity 逐一检查。
-
-CLI 是面向使用者的唯一入口，底层检测引擎（`UnityProjectInspector.Core`）负责规则评估、
-临时 Harness 部署、Unity Player 执行、证据收集与结果合并。
-
-| 能力 | 说明 |
-|---|---|
-| 静态检测 (Static inspection) | 解析场景 / 脚本，执行规则（如 `SceneExists`） |
-| 运行时检测 (Runtime inspection) | 临时部署 Harness → 构建并启动 Unity Player → 通过 IPC 收集运行时证据 |
-| 临时 Harness 部署 | 检测结束后自动清理，不污染用户项目 |
-| Unity Player 执行 | 构建临时 Player 并启动，运行 RuntimeTest 脚本 |
-| 证据 / 结果处理 | 收集 Action 证据，执行 Assertion 判定 |
-| CLI 文本输出 | 人类可读的通过 / 失败报告 |
-| CLI JSON 输出 | 机器可读结果，便于集成 |
-
-> 当前不是商业产品，也不是完整 CI/CD 平台：它聚焦于"Assignment → 检测 → 结果"这一核心闭环。
-
-## Quick Demo（macOS — 一键演示）
-
-> **给第一次看到这个项目的人准备的。** 无需输入任何命令，双击即可运行。
-
-1. Clone 仓库
-2. 双击 **`Demo.command`**
-3. 等待 Demo 自动完成
-
-Demo 会自动定位仓库、构建 CLI、执行**成功案例**和**故意失败案例**，最终展示清晰的汇总结果：
-
-```
-  [1/2] Static Inspection
-    Assignment: scene-check.json
-    Result: PASS (exit 0)
-
-  [2/2] Failure Detection
-    Assignment: static-fail.json
-    Result: EXPECTED FAIL (exit 1)
-
-  Demo completed successfully.
-```
-
-你不需要安装 Unity Editor，甚至不需要知道 CLI 的存在。
-
-## One-Click Inspection Tool（一键检查工具，小白版）
-
-`tools/DragCheck/` 提供"拖拽即检查"的免配置入口：不需要记命令、不需要手写 JSON。
-**App 内已打包独立的检查引擎（自包含 CLI）**——别人拿到就能用，不需要装 .NET、不需要装 Python、不需要克隆仓库。
-报告生成（含层级树与修复建议）已**移入 CLI 自身**，全平台一致。
-
-### 用法（macOS）
-
-1. 下载 `Unity工程一键检查.app.zip`，解压后把 `Unity工程一键检查.app` 放到"应用程序"或桌面；
-2. 把 Unity 工程 **zip 压缩包**（或整个工程文件夹）拖到应用图标上；
-3. 自动完成：解压 → 校验工程结构 → 自动生成检查方案 → 运行静态检查 → 弹出中文 HTML 体检报告。
-
-### 用法（Windows）
-
-1. 下载 `Unity工程一键检查_Windows.zip`（win-x64，约 40MB），解压到任意目录；
-2. 把 Unity 工程 **zip 压缩包**（或整个工程文件夹）直接拖到 `check_unity_project.bat` 上；
-3. 自动完成同样的流程，并打开 HTML 体检报告。首次运行若弹出 SmartScreen 提示，点"更多信息 → 仍要运行"即可。
-
-报告包含：**结论横幅、统计卡片、检查明细、场景与对象层级树（Unity Hierarchy 风格，可折叠）、失败项的修复建议**（小白看得懂"哪错了 + 怎么改"）。
-
-命令行等价写法：
-
-```bash
-bash tools/DragCheck/check_unity_project.sh /path/to/YourUnityProject.zip   # macOS
-tools/DragCheck/win/check_unity_project.bat "D:\YourUnityProject.zip"       # Windows
-```
-
-### 说明
-
-- 纯静态检查，无需 Unity Editor；
-- 分发包是**自包含**的：macOS App 内嵌 `cli-publish/`（osx-arm64），Windows zip 内含 `unityprojectinspector.exe`（win-x64），均零依赖；
-- 脚本定位 CLI 的优先级：App 内嵌的独立 CLI → 仓库源码（开发模式，`dotnet run`）；
-- 分发 zip 由 `tools/DragCheck/` 目录内的脚本 + `Unity工程一键检查.app` 打包生成（.app 本身不入库，可用 `osacompile` 从目录内脚本重新生成）。
-
-## How others can use it（怎么让别人用上）
-
-按使用者的技术水平，有三条现成的路径：
-
-| 使用者 | 拿到什么 | 怎么用 | 需要装什么 |
-|---|---|---|---|
-| **老师 / 小白（macOS）** | `Unity工程一键检查.app.zip` | 解压 → 把学生工程 zip 拖到 App 图标 → 自动出体检报告 | 什么都不用装（App 自包含） |
-| **老师 / 小白（Windows）** | `Unity工程一键检查_Windows.zip` | 解压 → 把学生工程 zip 拖到 `check_unity_project.bat` 上 | 什么都不用装（win-x64 自包含） |
-| **开发者 / CI** | Git 仓库 | `git clone` → `dotnet build` → `dotnet run ... inspect` | .NET SDK 10 |
-
-给老师演示的最短路径：发对应平台的 zip → 老师解压 → 拖入学生工程 → 打开报告（结论 + 层级树 + 修复建议）。
-
-## Quick Start（CLI — 命令行使用）
-
-无需安装 Unity、无需任何真实 Unity 项目，即可在本地复现完整的**静态检测**流程。
-
-### 1. Build
+### 开发者
 
 ```bash
 dotnet build
-```
 
-### 2. Run the static demo (passes → exit 0)
-
-针对仓库内置的最小 Unity 工程 `tests/fixtures/MinimalUnityProject` 运行纯静态 assignment：
-
-```bash
+# 用仓库自带的最小工程跑静态检查（通过，退出码 0）
 dotnet run --no-build --project src/UnityProjectInspector.Cli -- inspect \
   --project tests/fixtures/MinimalUnityProject \
   --assignment examples/assignments/static-only.json
-```
 
-真实输出：
-
-```
-UnityProjectInspector
-────────────────────────────
-
-Result: ✓ PASSED
-
-Requirements:
-  scene-exists         ✓ PASSED       StaticOnly: static analysis passed. Runtime not required.
-
-Assignment passed: all requirements satisfied.
-```
-
-> 第一次运行 `dotnet run` 会先编译并打印编译信息；上面的 `dotnet run --no-build` 已假定你执行过
-> `dotnet build`。若跳过 Build 步骤，直接用 `dotnet run --project ...` 也可，只会多出编译行。
-
-### 3. Run JSON output
-
-加上 `--format json` 即可得到机器可读结果（stdout 始终是可重新解析的有效 JSON）：
-
-```bash
-dotnet run --no-build --project src/UnityProjectInspector.Cli -- inspect \
-  --project tests/fixtures/MinimalUnityProject \
-  --assignment examples/assignments/static-only.json \
-  --format json
-```
-
-真实输出：
-
-```json
-{
-  "status": "PASSED",
-  "message": "Assignment passed: all requirements satisfied.",
-  "requirements": [
-    {
-      "id": "scene-exists",
-      "name": "Required scene exists",
-      "status": "PASSED",
-      "message": "StaticOnly: static analysis passed. Runtime not required.",
-      "hasRuntime": false
-    }
-  ]
-}
-```
-
-### 4. Run the failure demo (fails → exit 1)
-
-`examples/assignments/static-fail.json` 故意要求一个不存在的场景 `MissingScene`，用于验证失败路径：
-
-```bash
+# 故意失败的例子（退出码 1）
 dotnet run --no-build --project src/UnityProjectInspector.Cli -- inspect \
   --project tests/fixtures/MinimalUnityProject \
   --assignment examples/assignments/static-fail.json
 ```
 
-真实输出：
+常用选项：`--format json`（机器可读）、`--format chinese`（中文报告）、`--report <file>`（详细报告，按扩展名推断 json/md/html）、`--health-report <file>`（体检报告）、`--generate-assignment <path>`（自动生成检查方案后退出）、`--output <dir>`。
 
-```
-UnityProjectInspector
-────────────────────────────
+## 检查方案（Assignment）
 
-Result: ✗ FAILED
-
-Requirements:
-  scene-missing        ✗ FAILED       StaticOnly: static analysis failed. Runtime not required.
-
-Assignment failed: some requirements did not pass.
-```
-
-退出码：`0` = 通过，`1` = 失败。上述三个流程均**不需要 Unity Editor**，可在 CI / 任意干净环境中复现。
-
-## Assignment format
-
-> 完整的字段、类型、可选性与所有 8 种静态规则 / 4 种 Runtime Action / 2 种 Runtime Assertion 的
-> 最小 JSON 示例，见 [docs/assignment-format.md](docs/assignment-format.md)（以 Core 代码为准的权威说明）。
-
-Assignment 是一个 JSON 文件，描述一组 `requirements`，每个 requirement 包含若干 `staticRules`
-（以及可选的 `runtimeTest`）。最小结构：
+一份 JSON，描述工程应当满足哪些要求。最小例子：
 
 ```json
 {
-  "id": "example-static-only",
-  "name": "Static-Only Example Assignment",
+  "id": "my-assignment",
   "requirements": [
     {
       "id": "scene-exists",
       "name": "Required scene exists",
       "evidenceRequirement": "StaticOnly",
       "staticRules": [
-        {
-          "id": "scene.training.exists",
-          "name": "TrainingScene exists",
-          "type": "SceneExists",
-          "target": "TrainingScene",
-          "severity": "Error"
-        }
+        { "id": "scene.required.exists", "type": "SceneExists", "target": "MainScene", "severity": "Error" }
       ]
     }
   ]
 }
 ```
 
-- `evidenceRequirement`：`StaticOnly`（只需静态分析）或 `RuntimeRequired`（需要启动 Unity Player）。
-- `staticRules[].type`：当前支持 `SceneExists`（按场景文件名匹配，区分大小写）。
-- 运行时需求额外包含 `runtimeTest`（`actions` 与 `assertions`，使用 `$type` 多态）。
+`evidenceRequirement`：`StaticOnly` 只需静态分析；`RuntimeRequired` 需要启动 Unity Player。目前支持 8 种静态规则、4 种运行 Action、2 种运行断言。完整字段说明见 [docs/assignment-format.md](docs/assignment-format.md)，可直接运行的示例在 `examples/assignments/`（如 `static-only.json`、`static-fail.json`、`runtime-required.json`）。
 
-仓库内置示例：
+## 交互模式
 
-- [`examples/assignments/static-only.json`](examples/assignments/static-only.json) — 纯静态检测，与 `tests/fixtures/MinimalUnityProject` 中的 `TrainingScene` 对应。
-- [`examples/assignments/static-fail.json`](examples/assignments/static-fail.json) — 故意失败的静态检测示例（要求不存在的 `MissingScene`）。
-- [`examples/assignments/runtime-required.json`](examples/assignments/runtime-required.json) — 静态 + 运行时检测（需要 Unity Editor）。
+不带参数直接运行 CLI 即进入交互模式，所有输出为中文：快速检查（自动扫描场景）、使用已有方案、引导式创建方案。
 
-支持的运行 Action `$type`：`ObserveActiveScene`、`ReadLogs`、`Wait`、`ClickButton`。
-支持的 Assertion `$type`：`AssertActiveScene`、`AssertNoExceptions`。
+## 静态 vs 运行时
 
-## Static vs Runtime inspection
-
-| 维度 | 静态检测 (Static) | 运行时检测 (Runtime) |
+| 维度 | 静态 | 运行时 |
 |---|---|---|
-| 是否需要 Unity Editor | **否** | **是** |
-| 是否需要构建 / 启动 Player | 否 | 是 |
-| 验证内容 | 场景 / 脚本等工程静态结构 | 运行时行为（如启动后激活场景） |
-| 退出码 | 0（通过）/ 1（失败）/ 2（输入错误） | 同上，外加 3（运行时失败）/ 4（内部错误） |
-| 是否可用于无 Unity 环境 | 是（本仓库 Quick Start 即为此） | 否 |
-
-> 静态检测只需要一个标准的 Unity 工程目录（`Assets/`、`ProjectSettings/`、`Packages/`）和一个
-> 能被识别的 `.unity` 场景文件；它**不会**读取 `Library/` 或运行任何 Unity 进程。
-
-## Using it with a real Unity project
-
-```bash
-dotnet run --project src/UnityProjectInspector.Cli -- inspect \
-  --project "/path/to/YourUnityProject" \
-  --assignment "/path/to/your-assignment.json"
-```
-
-- `--project` 指向任意真实 Unity 工程（需含 `Assets/`、`ProjectSettings/`、`Packages/`）。
-- 纯静态 assignment 不依赖 Unity 安装；含 `RuntimeRequired` 的 assignment 需要提供可用的
-  Unity Editor（macOS 下由 Unity Hub 自动发现，或用 `--unity` 显式指定）。
-
-## Inspect your own Unity project
-
-下面是一个**完整、真实可复现**的流程，目标读者是**第一次接触本工具、不读 Core 源码**的开发者。
-这里用变量 `YourUnityProject` 代表你本地的真实 Unity 工程目录。
-
-### 步骤
-
-1. **构建工具**
-
-   ```bash
-   dotnet build
-   ```
-
-2. **找到你的 Unity 工程目录**
-
-   记下它的绝对路径，例如 `/Users/you/Projects/MyGame`。确认它至少包含：
-
-   ```
-   Assets/
-   ProjectSettings/
-   Packages/
-   ```
-
-   （`Library/`、`obj/` 等由 Unity 生成，不必提交，也不会被本工具读取。）
-
-3. **确认工程里有哪些 Scene**
-
-   打开 `Assets/` 翻找 `.unity` 文件，记下其中一个场景名，例如 `MainScene`。
-   静态规则 `SceneExists` 按 `.unity` **文件名**匹配（区分大小写）。
-
-4. **创建你的 assignment JSON**
-
-   复制 [`examples/assignments/template.json`](examples/assignments/template.json)，把
-   `"YourSceneName"` 改成你工程里真实存在的场景名：
-
-   ```json
-   {
-     "id": "my-assignment",
-     "name": "My Assignment",
-     "requirements": [
-       {
-         "id": "scene-exists",
-         "name": "Required scene exists",
-         "evidenceRequirement": "StaticOnly",
-         "staticRules": [
-           {
-             "id": "scene.required.exists",
-             "name": "Required scene exists",
-             "type": "SceneExists",
-             "target": "MainScene",
-             "severity": "Error"
-           }
-         ]
-       }
-     ]
-   }
-   ```
-
-   保存为 `/Users/you/Projects/my-assignment.json`。（其它字段含义与更多规则类型见
-   [docs/assignment-format.md](docs/assignment-format.md)。）
-
-5. **运行静态检测**
-
-   ```bash
-   dotnet run --project src/UnityProjectInspector.Cli -- inspect \
-     --project "/Users/you/Projects/MyGame" \
-     --assignment "/Users/you/Projects/my-assignment.json"
-   ```
-
-   把上面两处路径替换成你自己的。若场景确实存在，结果为 `Result: ✓ PASSED`，退出码 `0`。
-
-6. **阅读结果**
-
-   - 文本模式：直接看 `Result:` 与每个 requirement 的 `✓ PASSED / ✗ FAILED`。
-   - 机器可读：加 `--format json`，stdout 是有效 JSON。
-
-7. **如果失败**
-
-   结果为 `Result: ✗ FAILED`、退出码 `1` 表示**检测已正常执行，但某条 requirement 没通过**。
-   例：`SceneExists` 失败时，说明：
-
-   - 场景文件不在 `Assets/` 下，或
-   - `target` 里的场景名与 `.unity` 文件名**大小写/拼写不一致**。
-
-   按 requirement 的 `id`（如 `scene-exists`）定位是哪一条，修正 assignment 或工程后重跑。
-
-8. **如果要做运行时检测**
-
-   把对应 requirement 的 `evidenceRequirement` 改为 `"RuntimeRequired"`，并补充 `runtimeTest`
-   （actions + assertions）。这需要本机安装 Unity Editor，且 CLI 能发现 Unity 可执行文件
-   （macOS 下走 Unity Hub，或用 `--unity <path>` 显式指定）。完整示例见
-   [`examples/assignments/runtime-required.json`](examples/assignments/runtime-required.json)。
-
-> 提示：`examples/assignments/` 下还有 `static-only.json`、`static-fail.json`、
-> `scene-check.json` 等可直接运行的示例；其中 `scene-check.json` 配合仓库内置的
-> `tests/fixtures/MinimalUnityProject` 即可在**不安装 Unity** 的情况下复现完整静态检测。
-
-## Interactive Mode（交互模式）
-
-无需记忆参数——直接运行 CLI，进入交互模式：
-
-```bash
-dotnet run --project src/UnityProjectInspector.Cli
-```
-
-或：
-
-```bash
-dotnet run --project src/UnityProjectInspector.Cli -- inspect
-```
-
-交互模式提供四个选项：
-
-1. **快速检查** — 自动扫描 `Assets/Scenes/*.unity`，选择场景后立即检查（无需编写 JSON）
-2. **使用已有检查方案** — 选择一个已有的 assignment JSON 文件执行检查
-3. **创建检查方案** — 引导式创建 StaticOnly assignment（添加场景/游戏对象/组件/文件规则）
-4. **退出**
-
-交互模式下所有输出均为中文，包括检查结果、统计信息和规则类型名称。
-
-## Chinese Output（中文输出）
-
-标准 CLI 模式下也可以通过 `--format chinese` 输出中文检查报告：
-
-```bash
-dotnet run --no-build --project src/UnityProjectInspector.Cli -- inspect \
-  --project tests/fixtures/MinimalUnityProject \
-  --assignment examples/assignments/static-fail.json \
-  --format chinese
-```
-
-中文输出示例（失败场景，带修复建议）：
-
-```
-UnityProjectInspector 检查报告
-═══════════════════════════
-
-结果: ✗ 未通过
-
-检查项:
-  [scene-missing]
-    名称: Required scene exists
-    状态: ✗ 未通过
-    详情: StaticOnly: static analysis failed. Runtime not required.
-    类型: 静态检测
-    ✗ 场景存在
-      目标: MissingScene
-      期望: MissingScene
-      结果: 不存在
-      原因: Scene not found in project
-      建议: 没找到叫「MissingScene」的场景。检查：场景文件名是否完全一致（含大小写）、是否在 Assets/Scenes 文件夹下。
-
-统计: 通过 0 / 失败 1 / 未评估 0 / 总计 1
-
-Assignment failed: some requirements did not pass.
-```
-
-每个失败项都会带一行 **建议**（小白看得懂的"哪错了 + 怎么改"，覆盖全部 8 种规则）。
-
-### Quick Check：一步检查你的真实 Unity 项目
-
-进入交互模式（`dotnet run --project src/UnityProjectInspector.Cli`），选择 **快速检查**：
-
-1. 输入项目路径（如 `/Users/you/MyUnityProject`）
-2. 自动扫描 `Assets/Scenes/` 下的场景
-3. 选择要检查的场景序号
-4. 自动执行并输出中文结果
-
-无需手动编写任何 JSON 文件。
-
-### Assignment Creator：交互式创建检查方案
-
-选择 **创建检查方案** 后：
-
-1. 输入方案 ID、名称和可选描述
-2. 逐条添加规则（场景 → 游戏对象 → 组件 → 文件）
-3. 查看、删除当前规则
-4. 保存为 JSON 文件
-5. 自动执行检查
-
-创建的 JSON 文件通过 `CliInputValidator` 和 `InspectionWorkflowValidator` 的完整验证，可直接用于后续检查。
-
-## Inspection Evidence &amp; Explainability (M33)
-
-Every rule check can produce structured **evidence** explaining what was checked, what was expected,
-what was actually observed, and why the result was determined. Evidence is derived from the existing
-`RuleDefinition` + `RuleResult` data at the CLI layer — no Core DTOs are modified.
-
-### Evidence fields
-
-| Field | Type | Description |
-|---|---|---|
-| `ruleId` | `string` | Unique rule identifier |
-| `ruleType` | `string` | Rule type (e.g. `SceneExists`, `FileExists`) |
-| `status` | `string` | `PASSED` / `FAILED` / `NOT_EVALUATED` |
-| `target` | `string?` | The primary target (scene name, GameObject name, file path) |
-| `expected` | `string?` | What was expected (component type, parent name, method name — rule-specific) |
-| `actual` | `string?` | What was actually observed (`"exists"`, `"not found"`, `"script attached"`, etc.) |
-| `source` | `string?` | Location/source when reliably available (e.g. `Scenes/Main.unity`, `Assets/Scripts/PlayerMove.cs`) |
-| `reason` | `string?` | Human-readable explanation of the result |
-
-Evidence is available in all output formats and in the inspection report (JSON / Markdown / HTML).
-
-### Evidence per rule type
-
-| Rule Type | Target | Expected | Source example (PASS) |
-|---|---|---|---|
-| `SceneExists` | scene name | — | `Scenes/Main.unity` |
-| `GameObjectExists` | GameObject name | — | Scene path (when scoped) |
-| `ComponentExists` | GameObject name | component class | — |
-| `FileExists` | file path | — | same as Target |
-| `ScriptAttached` | GameObject name | script class | — |
-| `GameObjectHierarchy` | child name | parent name | — |
-| `UnityEventBinding` | source GameObject | method name | — |
-| `CodeEvidence` | source GameObject | method name | — |
-
-### Evidence in text output
-
-The default `--format text` output shows per-rule evidence indented under each requirement:
-
-```
-Requirements:
-  all-scenes-present   ✓ PASSED       StaticOnly: static analysis passed.
-    ✓ SceneExists
-      目标: Main
-      结果: exists
-      来源: Scenes/Main.unity
-      原因: Scene 'Main' exists
-    ✓ SceneExists
-      目标: Level
-      结果: exists
-      来源: Scenes/Level.unity
-      原因: Scene 'Level' exists
-```
-
-Chinese mode (`--format chinese`) translates evidence labels and known actual values:
-
-```
-    ✓ 场景存在
-      目标: Main
-      结果: 存在
-      来源: Scenes/Main.unity
-      原因: Scene 'Main' exists
-```
-
-### Evidence in JSON (machine-readable)
-
-Evidence is emitted as an optional `ruleEvidence` array under each requirement's JSON object.
-Null fields are omitted (`JsonIgnoreCondition.WhenWritingNull`) to preserve backward compatibility:
-
-```json
-{
-  "requirements": [
-    {
-      "id": "all-scenes-present",
-      "status": "PASSED",
-      "ruleEvidence": [
-        {
-          "ruleId": "scene.main-menu",
-          "ruleType": "SceneExists",
-          "status": "PASSED",
-          "target": "Main",
-          "actual": "exists",
-          "reason": "Scene 'Main' exists",
-          "source": "Scenes/Main.unity"
-        }
-      ]
-    }
-  ]
-}
-```
-
-When evidence is not available (no static rules were evaluated), the `ruleEvidence` key is absent
-from the JSON output.
-
-### Evidence in inspection reports
-
-The `--report <path>` feature generates evidence-rich reports in JSON, Markdown, or HTML:
-
-- **JSON report**: Same structure as CLI JSON, but with schema version and full rule-level detail
-- **Markdown report**: Per-rule evidence tables under a `### Evidence` heading
-- **HTML report**: Evidence cards with status badges inside collapsible detail sections
-
-Reports are generated with:
-```bash
-dotnet run --project src/UnityProjectInspector.Cli -- inspect \
-  --project /path/to/UnityProject \
-  --assignment /path/to/assignment.json \
-  --report /path/to/report.json   # or .md / .html
-```
-
-## Troubleshooting
-
-### exit 2 — InvalidInput（输入 / 配置错误）
-
-CLI 在真正检测之前就发现输入有问题。常见原因与排查：
-
-| 现象 | 原因 | 处理 |
-|---|---|---|
-| `Project directory not found` | `--project` 路径不存在 | 检查路径拼写 |
-| `does not appear to be a valid Unity project` | 工程缺少 `Assets/`/`ProjectSettings/`/`Packages/` | 指向正确的 Unity 工程根目录 |
-| `Assignment file not found` | `--assignment` 路径不存在 | 检查 JSON 文件路径 |
-| `Assignment JSON is not valid: ...` | JSON 语法错误 / 未知 `$type` | 用 JSON 校验器检查；`$type` 必须是文档列出的确切值 |
-| `Assignment must contain at least one requirement` | `requirements` 为空数组 | 至少加一条 requirement |
-| `RuntimeRequired but has no RuntimeTest` | `evidenceRequirement: RuntimeRequired` 却没给 `runtimeTest` | 补 `runtimeTest`，或改回 `StaticOnly` |
-| `no Unity executable found` | 需要 Runtime 但找不到 Unity | 安装 Unity Hub，或用 `--unity <path>` 指定 |
-
-### exit 1 — Failed（检测通过，但需求未满足）
-
-CLI **正常执行完**了 inspection，只是有 requirement 没通过。看每个 requirement 的
-`✗ FAILED` 与消息：
-
-- `SceneExists` 失败 → 场景不在 `Assets/` 下，或文件名与 `target` 不一致（区分大小写）。
-- 其它静态规则失败 → 检查对应 GameObject / 组件 / 文件是否真实存在。
-
-### exit 3 — RuntimeError（运行时无法完成）
-
-Runtime inspection 启动 / 执行过程中失败（对应 `RuleStatus.NotEvaluated`）：
-
-- 本机是否安装了 Unity Editor？
-- Unity 可执行文件是否可用（Unity Hub 自动发现，或 `--unity` 指定）？
-- 工程能否正常 build？
-- Runtime Harness 是否部署成功（工具会自动部署并在结束后清理）？
-- 加 `--debug` 查看更详细的技术信息。
-
-### exit 4 — InternalError（工具内部未预期错误）
-
-发生了工具内部的未预期异常：
-
-- 默认输出只给一句提示 + 异常消息摘要，**不会**泄漏原始堆栈。
-- 加 `--debug`（或 `-v` / `--verbose`）可看到完整技术细节，便于反馈问题。
-- 保留 `--debug` 下的输出信息再上报。
-
-## Requirements
-
-| 项目 | 版本 / 说明 |
-|---|---|
-| .NET SDK | 10.0（CLI 与 Core 均以此目标框架构建） |
-| Unity Editor | 2022.3.62f3c1（**仅运行时检测**需要；静态检测不需要） |
-| 操作系统 | macOS（Apple Silicon）已验证；Unity Hub 自动检测路径 `/Applications/Unity/Hub/Editor` |
-| 静态检测 | 不需要 Unity Editor，只需一个标准的 Unity 项目目录 |
-
-> 未验证 Windows / Linux 支持，也未发布到 NuGet 或作为 `dotnet tool` 发布。跨平台支持以实际验证为准。
-
-## Architecture
-
-```
-CLI (参数解析 / 输入校验 / 结果格式化 / 退出码)
-  ↓
-AssignmentLoader  (JSON → AssignmentDefinition)
-  ↓
-InspectionWorkflowRunner (Core)
-  ↓
-Harness 部署 (仅运行时需求)
-  ↓
-Unity 构建 / Player 启动
-  ↓
-运行时 IPC (Actions → Evidence → Assertions)
-  ↓
-ResultMerger (Core)
-  ↓
-CLI Formatter (文本 / JSON)
-```
-
-CLI 不复制 Core 的业务逻辑（规则引擎、校验器、运行时运行器、Harness 部署、结果合并均由 Core 负责）。
-
-运行时检测的真实链路：
-
-```
-CLI
-  ↓ Core
-    ↓ HarnessDeployer（临时部署测试代码到用户工程）
-      ↓ Unity 构建
-        ↓ Player 启动
-          ↓ GenericRuntimeBridge（IPC）
-            ↓ Evidence（动作证据）
-              ↓ ResultMerger
-```
-
-该链路需要 Unity Editor 与构建环境，且会向用户工程写入临时 Harness（检测结束后自动清理）。
-
-## Exit codes
+| 需要 Unity Editor | 否 | 是 |
+| 验证内容 | 工程静态结构（场景/脚本/对象） | 运行时行为（启动后激活场景等） |
+| 用时 | 秒级 | 分钟级 |
+| 退出码 | 0 / 1 / 2 | 0 / 1 / 2 / 3 / 4 |
+
+## 退出码
 
 | 码 | 含义 | 触发条件 |
 |---|---|---|
-| 0 | Passed | 所有需求满足 |
-| 1 | Failed | 一个或多个需求失败（含运行时断言失败） |
-| 2 | InvalidInput | 参数错误、文件缺失、JSON 非法、Assignment 配置非法 |
-| 3 | RuntimeError | 运行时无法完成（Unity 构建 / 启动 / IPC 失败） |
-| 4 | InternalError | 检测管线内部未预期异常 |
+| 0 | 通过 | 所有需求满足 |
+| 1 | 未通过 | 有需求失败（含运行时断言失败） |
+| 2 | 输入错误 | 参数错误、文件缺失、JSON 非法、方案配置非法 |
+| 3 | 运行时失败 | Unity 构建 / 启动 / IPC 失败 |
+| 4 | 内部错误 | 检测管线内部未预期异常 |
 
-所有输入类错误均返回 **2** 并给出人类可读信息，不会向普通用户暴露原始堆栈或 Core 内部细节
-（`--debug` 可开启完整技术信息用于诊断）。
+输入类错误都会给出人类可读的提示；加 `--debug` 可看到完整技术信息。
 
-## Development / Tests
+## 常见问题
+
+- **exit 2**：`--project` 路径不存在、工程缺 `Assets/ProjectSettings/Packages`、assignment JSON 非法、`RuntimeRequired` 却缺 `runtimeTest`。按提示修正。
+- **exit 1**：检查正常完成，只是有需求没满足。看具体 requirement 的失败信息，中文模式会带"建议"（哪错了、怎么改）。
+- **exit 3**：Unity 未安装或找不到、工程构建失败、Harness 部署失败。
+- **exit 4**：工具内部未预期异常，加 `--debug` 保留完整输出再反馈。
+
+## 架构
+
+CLI 负责参数解析、输入校验、结果格式化和退出码；`UnityProjectInspector.Core` 负责规则引擎、Harness 部署、Unity Player 执行、证据收集与结果合并。
+
+运行时检查的链路：临时部署 Harness → 构建并启动 Unity Player → 通过 IPC 收集动作证据 → 判定断言 → 结束后自动清理，不污染用户工程。所有输出（文本 / JSON / 报告）都会带上每条规则的结构化证据：查了什么、期望什么、实际看到什么、为什么是这个结论。
+
+## 环境要求
+
+- .NET SDK 10
+- Unity Editor 2022.3（仅运行时检查需要）
+- 已验证：macOS（Apple Silicon）、Windows（win-x64）
+- 静态检查不需要 Unity；报告生成在 CLI 内完成，不依赖 python
+
+## 开发与测试
 
 ```bash
 dotnet build
 dotnet test
 ```
 
-CLI 测试覆盖：参数解析、输入校验、错误处理、退出码、示例 Assignment 可加载性，以及
-`tests/fixtures/MinimalUnityProject` 的静态 demo（成功 / 失败 / JSON）复现。
+CLI 测试覆盖参数解析、输入校验、错误处理、退出码、示例 assignment 可加载性，以及最小工程 fixtures 的静态检查（通过 / 失败 / JSON 输出）。
