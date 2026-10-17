@@ -14,6 +14,16 @@ DOTNET="/usr/local/share/dotnet/dotnet"
 if [ ! -x "$DOTNET" ]; then DOTNET="$(command -v dotnet)"; fi
 PYTHON="$(command -v python3 || echo /usr/bin/python3)"
 
+# 独立 CLI（发布产物）：别人拿到 .app 不需要安装 dotnet 也不需要仓库。
+# 放在 Contents/Resources/cli-publish/，存在则优先使用。
+EMBEDDED_CLI="$TOOL_DIR/cli-publish/unityprojectinspector"
+if [ -x "$EMBEDDED_CLI" ]; then
+  CLI_CMD=("$EMBEDDED_CLI")
+else
+  # 开发模式：使用仓库源码（需要本机 dotnet）
+  CLI_CMD=("$DOTNET" run --no-build --project "$CLI_DIR")
+fi
+
 INPUT="$1"
 if [ -z "$INPUT" ]; then
   echo "用法：把 Unity 工程文件夹或 .zip 压缩包拖到这个应用/脚本上"
@@ -73,8 +83,7 @@ fi
 
 # ---------- 4. 运行 CLI 静态检查 ----------
 RESULT_JSON="$WORKDIR/result.json"
-cd "$REPO_DIR" || exit 2
-"$DOTNET" run --no-build --project "$CLI_DIR" -- inspect \
+"${CLI_CMD[@]}" inspect \
   --project "$PROJECT" \
   --assignment "$ASSIGNMENT" \
   --format json > "$RESULT_JSON" 2>"$WORKDIR/cli.err"

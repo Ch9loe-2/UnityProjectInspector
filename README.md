@@ -9,20 +9,23 @@ Unity 项目静态分析与运行时检测工具。给定一个 Unity 项目和�
 
 ```
 第 1 层 · 入口（怎么发起检查）
-   一键拖拽（小白零门槛）｜ 一键 Demo（演示）｜ 交互模式（免记参数）｜ CLI 命令（开发者 / CI）
+   一键拖拽 App（小白零门槛，自包含免安装）｜ 豆包技能（聊天里上传工程即检）
+   一键 Demo（演示）｜ 交互模式（免记参数）｜ CLI 命令（开发者 / CI）
 
 第 2 层 · 核心闭环（它做了什么）
-   写要求（Assignment JSON） → 跑检查（对工程逐条核对） → 出报告（✓/✗ + 证据）
+   写要求（Assignment JSON） → 跑检查（对工程逐条核对） → 出报告（✓/✗ + 证据 + 小白建议）
 
 第 3 层 · 检查能力（拿什么核对）
    静态检查：翻文件看"有没有"——8 种规则，秒级，不需要 Unity
    运行时检查：启动游戏看"对不对"——4 种动作 + 2 种断言，分钟级，需要 Unity
 
 第 4 层 · 输出（结果怎么给你）
-   文本 ｜ JSON（可接 CI）｜ 中文 ｜ HTML / Markdown 报告 ｜ 证据链（结果可解释）｜ 退出码（0/1/2/3/4）
+   文本 ｜ JSON（可接 CI）｜ 中文 ｜ HTML 体检报告（层级树 + 修复建议）｜ 证据链（结果可解释）｜ 退出码（0/1/2/3/4）
 ```
 
-快速上手：**小白** → 一键检查工具（`tools/DragCheck/`，拖拽即用）；**演示** → 双击 `Demo.command`；**开发者** → 见下方 Quick Start。
+性能：大场景解析提速 **4.4×**（2 万对象 366ms → 83ms）；同一脚本多事件绑定重复解析消除，**24×**（284ms → 12ms）。
+
+快速上手：**老师 / 小白** → 下载 `Unity工程一键检查.app.zip`（约 40MB，解压即用，不需要装任何东西），把学生工程 zip 拖到 App 图标上；**豆包用户** → 直接用「unity-project-check」技能上传工程；**演示** → 双击 `Demo.command`；**开发者** → 见下方 Quick Start。
 
 ## What it does
 
@@ -72,12 +75,15 @@ Demo 会自动定位仓库、构建 CLI、执行**成功案例**和**故意失�
 ## One-Click Inspection Tool（一键检查工具，小白版）
 
 `tools/DragCheck/` 提供"拖拽即检查"的免配置入口：不需要记命令、不需要手写 JSON。
+**App 内已打包独立的检查引擎（自包含 CLI）**——别人拿到就能用，不需要装 .NET、不需要克隆仓库。
 
 ### 用法（macOS）
 
-1. 把仓库里的 `Unity工程一键检查.app` 放到"应用程序"或桌面（或直接用下面的命令行）；
+1. 下载 `Unity工程一键检查.app.zip`，解压后把 `Unity工程一键检查.app` 放到"应用程序"或桌面；
 2. 把 Unity 工程 **zip 压缩包**（或整个工程文件夹）拖到应用图标上；
-3. 自动完成：解压 → 校验工程结构 → 自动生成检查方案 → 运行静态检查 → 弹出中文 HTML 体检报告（结论横幅、统计卡片、检查明细、场景对象清单）。
+3. 自动完成：解压 → 校验工程结构 → 自动生成检查方案 → 运行静态检查 → 弹出中文 HTML 体检报告。
+
+报告包含：**结论横幅、统计卡片、检查明细、场景与对象层级树（Unity Hierarchy 风格，可折叠）、失败项的修复建议**（小白看得懂"哪错了 + 怎么改"）。
 
 命令行等价写法：
 
@@ -89,8 +95,21 @@ bash tools/DragCheck/check_unity_project.sh /path/to/YourUnityProject/
 ### 说明
 
 - 纯静态检查，无需 Unity Editor；
-- `.app` 为本地编译产物（不入库），可用 `osacompile` 从目录内脚本重新生成；
-- 报告渲染依赖系统 `python3`。
+- App 是**自包含**的：内嵌 `cli-publish/`（osx-arm64 独立可执行），只依赖 macOS 系统自带的 `python3`；
+- 脚本定位 CLI 的优先级：App 内嵌的独立 CLI → 仓库源码（开发模式，`dotnet run`）；
+- 分发 zip 由 `tools/DragCheck/` 目录内的脚本 + `Unity工程一键检查.app` 打包生成（.app 本身不入库，可用 `osacompile` 从目录内脚本重新生成）。
+
+## How others can use it（怎么让别人用上）
+
+按使用者的技术水平，有三条现成的路径：
+
+| 使用者 | 拿到什么 | 怎么用 | 需要装什么 |
+|---|---|---|---|
+| **老师 / 小白（macOS）** | `Unity工程一键检查.app.zip` | 解压 → 把学生工程 zip 拖到 App 图标 → 自动出体检报告 | 什么都不用装（App 自包含） |
+| **豆包用户** | 「unity-project-check」技能 | 在豆包里上传 Unity 工程 zip，说"检查一下这个工程" | 什么都不用装 |
+| **开发者 / CI** | Git 仓库 | `git clone` → `dotnet build` → `dotnet run ... inspect` | .NET SDK 10 |
+
+给老师演示的最短路径：发 zip → 老师解压 → 拖入学生工程 → 打开报告（结论 + 层级树 + 修复建议）。
 
 ## Quick Start（CLI — 命令行使用）
 
@@ -384,7 +403,7 @@ dotnet run --no-build --project src/UnityProjectInspector.Cli -- inspect \
   --format chinese
 ```
 
-中文输出示例（失败场景）：
+中文输出示例（失败场景，带修复建议）：
 
 ```
 UnityProjectInspector 检查报告
@@ -398,11 +417,19 @@ UnityProjectInspector 检查报告
     状态: ✗ 未通过
     详情: StaticOnly: static analysis failed. Runtime not required.
     类型: 静态检测
+    ✗ 场景存在
+      目标: MissingScene
+      期望: MissingScene
+      结果: 不存在
+      原因: Scene not found in project
+      建议: 没找到叫「MissingScene」的场景。检查：场景文件名是否完全一致（含大小写）、是否在 Assets/Scenes 文件夹下。
 
 统计: 通过 0 / 失败 1 / 未评估 0 / 总计 1
 
 Assignment failed: some requirements did not pass.
 ```
+
+每个失败项都会带一行 **建议**（小白看得懂的"哪错了 + 怎么改"，覆盖全部 8 种规则）。
 
 ### Quick Check：一步检查你的真实 Unity 项目
 
