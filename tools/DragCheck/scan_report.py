@@ -6,6 +6,7 @@ UnityProjectInspector 一键检查辅助脚本
   scan_report.py gen-assignment <工程目录> <输出assignment.json>
   scan_report.py render-report <工程目录> <cli结果.json> <输出报告.html>
 """
+import html
 import json
 import os
 import re
@@ -67,25 +68,98 @@ def gen_assignment(project, out_path):
     print("OK assignment generated: %d scenes" % len(scenes))
 
 
-def scan_object_names(project, scene_rel):
-    """解析 .unity 场景中的 GameObject 对象名列表"""
+def scan_scene_hierarchy(project, scene_rel):
+    """解析 .unity 场景中的 GameObject 层级树（类似 Unity Hierarchy 面板）。
+
+    读取 GameObject 块（!u!1）的对象名与组件列表、Transform 块（!u!4）的
+    m_Father 父子指针，构建按 YAML 顺序排列的树：
+
+      [ {"name": str, "children": [...]}, ... ]   （顶层为根对象列表，递归）
+
+    父指针缺失 / 指向外部 Prefab 的对象按根处理，保持与 Unity 层级一致。
+    """
     path = os.path.join(project, scene_rel)
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             text = fh.read()
     except Exception:
         return []
-    names = []
-    for block in re.split(r"--- !u!(\d+) &", text):
-        body = block.split("\n", 1)[1] if "\n" in block else ""
-        # 只处理 GameObject 块（!u!1）中带 m_Name 的
-        if block and block[0].strip().isdigit() and "GameObject:" in body.split("\n")[0][:40]:
+    if not text:
+        return []
+
+    go_by_id = {}      # goId -> {"name": str, "comp_ids": [..], "transform": tid 或 None}
+    transforms = {}    # tid -> father tid
+    parts = re.split(r"--- !u!(\d+) &(\d+)\n", text)
+    # parts = [pre, type, fid, body, type, fid, body, ...]
+    it = iter(parts)
+    next(it, None)  # skip pre
+    for type_s, fid_s, body in zip(it, it, it):
+        try:
+            type_no, fid = int(type_s), int(fid_s)
+        except ValueError:
+            continue
+        if type_no == 1:  # GameObject
             m = re.search(r"m_Name:\s*(.+)", body)
-            if m:
-                nm = m.group(1).strip().strip('"')
-                if nm and nm not in names:
-                    names.append(nm)
-    return names
+            name = m.group(1).strip().strip('"') if m else ""
+            comp_ids = [int(x) for x in re.findall(r"component:\s*\{fileID:\s*(\d+)\}", body)]
+            go_by_id[fid] = {"name": name, "comp_ids": comp_ids, "transform": None}
+        elif type_no in (4, 224):  # Transform / RectTransform（UI 对象用 224）
+            m = re.search(r"m_Father:\s*\{fileID:\s*(\d+)\}", body)
+            transforms[fid] = int(m.group(1)) if m else 0
+
+    # 每个 GameObject 从组件列表里找到自己的 Transform 块 id
+    for go in go_by_id.values():
+        for cid in go["comp_ids"]:
+            if cid in transforms:
+                go["transform"] = cid
+                break
+
+    # transform id -> 拥有它的 GameObject id
+    owner = {go["transform"]: gid for gid, go in go_by_id.items() if go["transform"] is not None}
+
+    children = {gid: [] for gid in go_by_id}
+    roots = []
+    for gid, go in go_by_id.items():
+        t = go["transform"]
+        father_t = transforms.get(t, 0) if t is not None else 0
+        parent_go = owner.get(father_t)
+        if parent_go is not None and parent_go != gid:
+            children[parent_go].append(gid)
+        else:
+            roots.append(gid)
+
+    def build(gid, _seen):
+        if gid in _seen:  # 防御异常循环引用
+            return {"name": go_by_id[gid]["name"] or "GameObject", "children": []}
+        _seen = _seen | {gid}
+        node = {"name": go_by_id[gid]["name"] or "GameObject", "children": []}
+        for c in children[gid]:
+            node["children"].append(build(c, _seen))
+        return node
+
+    return [build(g, frozenset()) for g in roots]
+
+
+def count_tree_nodes(tree):
+    """统计一棵树里的节点总数（含所有层级）。"""
+    return sum(1 + count_tree_nodes(n["children"]) for n in tree)
+
+
+def render_tree_html(tree):
+    """把层级树渲染成 Unity 风格的可折叠嵌套列表（父对象可展开/收起）。"""
+    if not tree:
+        return '<span class="muted">（未解析到对象，或场景为空）</span>'
+    items = []
+    for node in tree:
+        name = html.escape(node["name"])
+        kids = node["children"]
+        if kids:
+            inner = '<details open><summary>%s</summary>%s</details>' % (
+                name, render_tree_html(kids))
+            items.append('<li class="has-children">%s</li>' % inner)
+        else:
+            items.append('<li>%s</li>' % name)
+    return '<ul class="hier">%s</ul>' % "".join(items)
 
 
 def render_report(project, result_json_path, out_path):
@@ -98,12 +172,12 @@ def render_report(project, result_json_path, out_path):
     passed = status == "PASSED"
     reqs = result.get("requirements", [])
     scenes = find_scenes(project)
-    scene_objs = []
+    scene_trees = []
     total_objs = 0
     for name, rel in scenes:
-        objs = scan_object_names(project, rel)
-        total_objs += len(objs)
-        scene_objs.append((name, rel, objs))
+        tree = scan_scene_hierarchy(project, rel)
+        total_objs += count_tree_nodes(tree)
+        scene_trees.append((name, rel, tree))
 
     proj_name = os.path.basename(os.path.normpath(project))
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -125,18 +199,14 @@ def render_report(project, result_json_path, out_path):
         )
     req_html = "\n".join(req_rows) if req_rows else '<div class="req">无检查项</div>'
 
-    # 场景对象清单
+    # 场景层级树（Unity Hierarchy 风格）
     scene_html = []
-    if scene_objs:
-        for name, rel, objs in scene_objs:
-            if objs:
-                chips = "".join('<span class="chip">%s</span>' % o for o in objs)
-            else:
-                chips = '<span class="muted">（未解析到对象，或场景为空）</span>'
+    if scene_trees:
+        for name, rel, tree in scene_trees:
             scene_html.append(
                 '<div class="scene-card"><div class="scene-title">%s</div>'
-                '<div class="scene-path">%s</div><div class="chips">%s</div></div>'
-                % (name, rel, chips)
+                '<div class="scene-path">%s</div>%s</div>'
+                % (name, rel, render_tree_html(tree))
             )
     else:
         scene_html.append('<div class="scene-card"><div class="muted">未在 Assets 下找到任何 .unity 场景</div></div>')
@@ -179,6 +249,19 @@ def render_report(project, result_json_path, out_path):
   .chip { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
           font-size: 12px; padding: 3px 10px; border-radius: 999px; }
   .muted { color: #9ca3af; font-size: 13px; }
+  /* 场景层级树（Unity Hierarchy 风格） */
+  ul.hier { list-style: none; margin: 4px 0 4px 6px; padding-left: 16px;
+            border-left: 1px dashed #d1d5db; }
+  ul.hier ul.hier { margin-top: 2px; margin-bottom: 2px; }
+  ul.hier li { font-size: 13px; line-height: 1.9; color: #374151;
+               padding-left: 2px; }
+  ul.hier li::before { content: "▪ "; color: #60a5fa; font-size: 10px; }
+  ul.hier li.has-children > details > summary { font-weight: 600;
+             color: #111827; cursor: pointer; }
+  ul.hier summary { list-style: none; }
+  ul.hier summary::-webkit-details-marker { display: none; }
+  ul.hier summary::before { content: "▸ "; color: #9ca3af; }
+  ul.hier details[open] > summary::before { content: "▾ "; color: #60a5fa; }
   .foot { text-align: center; color: #9ca3af; font-size: 12px; margin-top: 20px; }
   .summary { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
   .stat { flex: 1; min-width: 120px; background: #fff; border-radius: 12px; padding: 16px;
@@ -206,7 +289,7 @@ def render_report(project, result_json_path, out_path):
   </div>
 
   <div class="card">
-    <h2>场景与对象清单（工具扫描发现）</h2>
+    <h2>场景与对象层级（类似 Unity Hierarchy）</h2>
     %s
   </div>
 
