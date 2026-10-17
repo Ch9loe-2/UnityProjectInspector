@@ -10,7 +10,7 @@ Unity 项目静态分析与运行时检测工具。给定一个 Unity 项目和�
 ```
 第 1 层 · 入口（怎么发起检查）
    一键拖拽 App（macOS，小白零门槛，自包含免安装）｜ 拖拽 .bat（Windows）
-   豆包技能（聊天里上传工程即检）｜ 一键 Demo（演示）｜ CLI 命令（开发者 / CI）
+   一键 Demo（演示）｜ CLI 命令（开发者 / CI）
 
 第 2 层 · 核心闭环（它做了什么）
    写要求（Assignment JSON） → 跑检查（对工程逐条核对） → 出报告（✓/✗ + 证据 + 小白建议）
@@ -25,7 +25,7 @@ Unity 项目静态分析与运行时检测工具。给定一个 Unity 项目和�
 
 性能：大场景解析提速 **4.4×**（2 万对象 366ms → 83ms）；同一脚本多事件绑定重复解析消除，**24×**（284ms → 12ms）。
 
-快速上手：**老师 / 小白（macOS）** → 下载 `Unity工程一键检查.app.zip`（约 40MB，解压即用，不需要装任何东西），把学生工程 zip 拖到 App 图标上；**老师 / 小白（Windows）** → 下载 `Unity工程一键检查_Windows.zip`，把工程 zip 拖到 `check_unity_project.bat` 上；**豆包用户** → 直接用「unity-project-check」技能上传工程；**演示** → 双击 `Demo.command`；**开发者** → 见下方 Quick Start。
+快速上手：**老师 / 小白（macOS）** → 下载 `Unity工程一键检查.app.zip`（约 40MB，解压即用，不需要装任何东西），把学生工程 zip 拖到 App 图标上；**老师 / 小白（Windows）** → 下载 `Unity工程一键检查_Windows.zip`，把工程 zip 拖到 `check_unity_project.bat` 上；**演示** → 双击 `Demo.command`；**开发者** → 见下方 Quick Start。
 
 ## What it does
 
@@ -108,13 +108,12 @@ tools/DragCheck/win/check_unity_project.bat "D:\YourUnityProject.zip"       # Wi
 
 ## How others can use it（怎么让别人用上）
 
-按使用者的技术水平，有四条现成的路径：
+按使用者的技术水平，有三条现成的路径：
 
 | 使用者 | 拿到什么 | 怎么用 | 需要装什么 |
 |---|---|---|---|
 | **老师 / 小白（macOS）** | `Unity工程一键检查.app.zip` | 解压 → 把学生工程 zip 拖到 App 图标 → 自动出体检报告 | 什么都不用装（App 自包含） |
 | **老师 / 小白（Windows）** | `Unity工程一键检查_Windows.zip` | 解压 → 把学生工程 zip 拖到 `check_unity_project.bat` 上 | 什么都不用装（win-x64 自包含） |
-| **豆包用户** | 「unity-project-check」技能 | 在豆包里上传 Unity 工程 zip，说"检查一下这个工程" | 什么都不用装 |
 | **开发者 / CI** | Git 仓库 | `git clone` → `dotnet build` → `dotnet run ... inspect` | .NET SDK 10 |
 
 给老师演示的最短路径：发对应平台的 zip → 老师解压 → 拖入学生工程 → 打开报告（结论 + 层级树 + 修复建议）。
