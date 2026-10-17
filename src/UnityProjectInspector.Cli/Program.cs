@@ -106,6 +106,28 @@ public static class Program
             return (int)CliExitCode.InvalidInput;
         }
 
+        // ─── Phase 1.5: Auto-generate assignment mode ─────────────
+        if (!string.IsNullOrWhiteSpace(options.GenerateAssignmentPath))
+        {
+            var fullProject = Path.GetFullPath(options.ProjectPath);
+            if (!Directory.Exists(fullProject))
+            {
+                await Console.Error.WriteLineAsync($"Error: Project directory not found: {fullProject}");
+                return (int)CliExitCode.InvalidInput;
+            }
+            try
+            {
+                var sceneCount = AssignmentGenerator.Generate(fullProject, options.GenerateAssignmentPath);
+                await Console.Out.WriteLineAsync($"OK assignment generated: {sceneCount} scenes -> {options.GenerateAssignmentPath}");
+            }
+            catch (Exception ex)
+            {
+                await Console.Error.WriteLineAsync($"Error: Failed to generate assignment: {ex.Message}");
+                return (int)CliExitCode.InternalError;
+            }
+            return (int)CliExitCode.Passed;
+        }
+
         // ─── Phase 2: Validate inputs (before touching Unity) ────
         var validationError = await stageCollector.RecordAsync(
             "validate-inputs",
@@ -117,12 +139,15 @@ public static class Program
         }
 
         // ─── Phase 3: Load Assignment JSON ────────────────────────
+        // (Guaranteed non-null here: --generate-assignment mode already
+        // returned at Phase 1.5, and the parser requires at least one of
+        // --assignment / --generate-assignment.)
         AssignmentDefinition assignment;
         try
         {
             assignment = await stageCollector.RecordAsync(
                 "load-assignment",
-                () => Task.FromResult(AssignmentLoader.Load(options.AssignmentPath)));
+                () => Task.FromResult(AssignmentLoader.Load(options.AssignmentPath!)));
         }
         catch (FileNotFoundException ex)
         {
@@ -431,6 +456,20 @@ public static class Program
             Requirements = cliResult.Requirements,
             Stages = cliStages,
         };
+
+        // ─── Phase 8.6: Beginner health report ───────────────────
+        if (!string.IsNullOrWhiteSpace(options.HealthReportPath))
+        {
+            try
+            {
+                HealthReportWriter.Write(cliResult, context.ProjectInfo, options.HealthReportPath);
+                await Console.Out.WriteLineAsync($"Health report written to: {options.HealthReportPath}");
+            }
+            catch (Exception ex)
+            {
+                await Console.Error.WriteLineAsync($"Warning: Could not write health report: {ex.Message}");
+            }
+        }
 
         // ─── Phase 9: Exit code ──────────────────────────────────
         return (int)CliResultMapping.FromFinalStatus(coreResult.FinalStatus);

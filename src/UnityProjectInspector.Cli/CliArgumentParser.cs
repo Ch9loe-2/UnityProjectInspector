@@ -22,6 +22,8 @@ Options:
   --output <path>       Output directory (optional, default: current directory)
   --format <format>     Output format: text | json | chinese (optional, default: text)
   --report <path>       Write a detailed inspection report (.json/.md/.html); format inferred from extension (optional)
+  --health-report <path> Write a beginner-friendly HTML health report with fix hints and scene hierarchy trees (optional)
+  --generate-assignment <path>  Auto-generate an assignment JSON for the project, then exit (optional)
   --debug               Show full error details on internal failures (optional)
   --help                Show this help
 
@@ -29,6 +31,8 @@ Examples:
   unityprojectinspector inspect --project ./MyUnityProject --assignment assignment.json
   unityprojectinspector inspect --project ./MyUnityProject --assignment a.json --format json --output ./results
   unityprojectinspector inspect --project ./MyUnityProject --assignment a.json --report report.html
+  unityprojectinspector inspect --project ./MyUnityProject --generate-assignment auto.json
+  unityprojectinspector inspect --project ./MyUnityProject --assignment a.json --health-report report.html
 """;
 
     /// <summary>
@@ -76,6 +80,8 @@ Examples:
         string? outputDir = null;
         string? format = null;
         string? reportPath = null;
+        string? healthReportPath = null;
+        string? generateAssignmentPath = null;
         bool debug = false;
 
         for (int i = 0; i < remaining.Count; i++)
@@ -133,6 +139,12 @@ Examples:
                 case "--report":
                     reportPath = value;
                     break;
+                case "--health-report":
+                    healthReportPath = value;
+                    break;
+                case "--generate-assignment":
+                    generateAssignmentPath = value;
+                    break;
                 case "--debug":
                 case "--verbose":
                     debug = true;
@@ -145,7 +157,9 @@ Examples:
         // Validation
         if (string.IsNullOrWhiteSpace(projectPath))
             return (command, null, false, "Missing required option: --project <path>");
-        if (string.IsNullOrWhiteSpace(assignmentPath))
+
+        // --generate-assignment mode needs only --project; normal inspect needs --assignment.
+        if (string.IsNullOrWhiteSpace(assignmentPath) && string.IsNullOrWhiteSpace(generateAssignmentPath))
             return (command, null, false, "Missing required option: --assignment <path>");
 
         // Validate format
@@ -160,6 +174,8 @@ Examples:
             OutputDirectory = outputDir ?? ".",
             Format = format ?? "text",
             ReportPath = reportPath,
+            HealthReportPath = healthReportPath,
+            GenerateAssignmentPath = generateAssignmentPath,
             Debug = debug,
         };
 

@@ -3,8 +3,9 @@
 # UnityProjectInspector 一键检查脚本（小白版）
 #
 # 输入：Unity 工程文件夹 或 工程 zip 压缩包
-# 流程：自动解压 → 自动校验 → 自动生成检查方案 → 自动检查
-#       → 自动弹出 HTML 体检报告
+# 流程：自动解压 → 自动校验 → 自动生成检查方案（CLI 内建）
+#       → 自动检查（CLI 内建健康报告）→ 自动弹出 HTML 体检报告
+# 说明：报告生成已移入 CLI 自身，不再依赖 python3。
 # ============================================================
 
 REPO_DIR="/Users/tangluyi/Documents/GitHub/UnityProjectInspector"
@@ -12,7 +13,6 @@ CLI_DIR="$REPO_DIR/src/UnityProjectInspector.Cli"
 TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
 DOTNET="/usr/local/share/dotnet/dotnet"
 if [ ! -x "$DOTNET" ]; then DOTNET="$(command -v dotnet)"; fi
-PYTHON="$(command -v python3 || echo /usr/bin/python3)"
 
 # 独立 CLI（发布产物）：别人拿到 .app 不需要安装 dotnet 也不需要仓库。
 # 放在 Contents/Resources/cli-publish/，存在则优先使用。
@@ -73,20 +73,25 @@ if [ -z "$PROJECT" ] || \
   exit 2
 fi
 
-# ---------- 3. 自动生成检查方案 ----------
+# ---------- 3. CLI 自动生成检查方案 ----------
 ASSIGNMENT="$WORKDIR/auto-assignment.json"
-"$PYTHON" "$TOOL_DIR/scan_report.py" gen-assignment "$PROJECT" "$ASSIGNMENT"
-if [ ! -s "$ASSIGNMENT" ]; then
+"${CLI_CMD[@]}" inspect \
+  --project "$PROJECT" \
+  --generate-assignment "$ASSIGNMENT" > "$WORKDIR/gen.out" 2>&1
+GEN_EXIT=$?
+if [ "$GEN_EXIT" -ne 0 ] || [ ! -s "$ASSIGNMENT" ]; then
   echo "❌ 自动生成检查方案失败"
+  head -5 "$WORKDIR/gen.out" 2>/dev/null
   exit 2
 fi
 
-# ---------- 4. 运行 CLI 静态检查 ----------
-RESULT_JSON="$WORKDIR/result.json"
+# ---------- 4. 运行 CLI 静态检查，内建生成健康报告 ----------
+REPORT="/tmp/Unity工程体检报告_$(date +%H%M%S).html"
 "${CLI_CMD[@]}" inspect \
   --project "$PROJECT" \
   --assignment "$ASSIGNMENT" \
-  --format json > "$RESULT_JSON" 2>"$WORKDIR/cli.err"
+  --health-report "$REPORT" \
+  --format chinese > "$WORKDIR/cli.out" 2>"$WORKDIR/cli.err"
 CLI_EXIT=$?
 if [ "$CLI_EXIT" -ge 3 ]; then
   echo "❌ 检查工具运行失败（exit $CLI_EXIT）"
@@ -94,9 +99,7 @@ if [ "$CLI_EXIT" -ge 3 ]; then
   exit "$CLI_EXIT"
 fi
 
-# ---------- 5. 生成并打开 HTML 体检报告 ----------
-REPORT="/tmp/Unity工程体检报告_$(date +%H%M%S).html"
-"$PYTHON" "$TOOL_DIR/scan_report.py" render-report "$PROJECT" "$RESULT_JSON" "$REPORT"
+cat "$WORKDIR/cli.out"
 if [ ! -s "$REPORT" ]; then
   echo "❌ 生成报告失败"
   exit 2

@@ -9,8 +9,8 @@ public class CliOptions
     /// <summary>Path to the Unity project to inspect (required).</summary>
     public required string ProjectPath { get; init; }
 
-    /// <summary>Path to the assignment JSON file (required).</summary>
-    public required string AssignmentPath { get; init; }
+    /// <summary>Path to the assignment JSON file (optional only in --generate-assignment mode).</summary>
+    public string? AssignmentPath { get; init; }
 
     /// <summary>Path to the Unity Editor executable (optional, auto-detected).</summary>
     public string? UnityExecutable { get; init; }
@@ -27,6 +27,20 @@ public class CliOptions
     /// Independent of <see cref="Format"/>; the console output is unaffected.
     /// </summary>
     public string? ReportPath { get; init; }
+
+    /// <summary>
+    /// When set, the CLI auto-generates an assignment JSON for the project
+    /// (project structure + all scenes) at this path, then exits without inspecting.
+    /// Requires <see cref="ProjectPath"/> but not <see cref="AssignmentPath"/>.
+    /// </summary>
+    public string? GenerateAssignmentPath { get; init; }
+
+    /// <summary>
+    /// When set, a beginner-friendly "health report" HTML (banner, stats,
+    /// per-requirement detail with fix hints, scene hierarchy trees) is written
+    /// to this path after inspection. Independent of <see cref="ReportPath"/>.
+    /// </summary>
+    public string? HealthReportPath { get; init; }
 
     /// <summary>
     /// When true, unexpected internal errors print the full exception stack trace.
