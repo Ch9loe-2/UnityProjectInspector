@@ -8,7 +8,7 @@
 # 说明：报告生成已移入 CLI 自身，不再依赖 python3。
 # ============================================================
 
-REPO_DIR="/Users/tangluyi/Documents/GitHub/UnityProjectInspector"
+REPO_DIR="/Users/tangluyi/SelfContent/GitHub/UnityProjectInspector"
 CLI_DIR="$REPO_DIR/src/UnityProjectInspector.Cli"
 TOOL_DIR="$(cd "$(dirname "$0")" && pwd)"
 DOTNET="/usr/local/share/dotnet/dotnet"
