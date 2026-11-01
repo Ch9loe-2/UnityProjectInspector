@@ -8,7 +8,9 @@ namespace UnityProjectInspector.Tests;
 /// These tests do NOT launch real Unity — they test the data models
 /// and decision logic that the runtime adapter uses.
 ///
-/// The real runtime integration test is separate (see RuntimePocRunner).
+/// The real runtime integration tests (deploy → inspect → cleanup against the
+/// checked-in fixture) live in M22_5_HarnessDeploymentTests and
+/// M23_1_WorkflowHarnessIntegrationTests.
 /// </summary>
 public class RuntimePocTests
 {
