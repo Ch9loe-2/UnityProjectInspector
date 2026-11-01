@@ -11,5 +11,19 @@ obj/
 *.csproj
 *.sln
 *.slnx
+
+# Unity re-creates ProjectSettings assets when opening the project;
+# keep only the two checked-in settings files.
+ProjectSettings/*
+!ProjectSettings/ProjectVersion.txt
+!ProjectSettings/EditorBuildSettings.asset
+
+# Files injected by runtime harness tests (GenericRuntimeBridge /
+# GenericPlayerBuild) and Unity-generated URP global settings.
+# Normally removed by test cleanup; ignore as a safety net so an
+# interrupted run can't dirty the fixture.
+Assets/Editor/
+Assets/Scripts/GenericRuntimeBridge.cs
+Assets/Scripts/GenericRuntimeBridge.cs.meta
 Assets/UniversalRenderPipelineGlobalSettings.asset
 Assets/UniversalRenderPipelineGlobalSettings.asset.meta
