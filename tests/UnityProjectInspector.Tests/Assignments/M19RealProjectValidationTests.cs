@@ -41,8 +41,7 @@ public class M19RealProjectCollection { }
 [Trait("Category", "Integration")]
 public class M19RealProjectValidationTests
 {
-    private const string RealProjectPath =
-        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
+    private static string RealProjectPath => TestPaths.RealWorldProject;
 
     private static readonly bool ProjectAvailable;
 
@@ -711,13 +710,14 @@ public class M19RealProjectValidationTests
     [Fact]
     public void M19_VerifyProjectNotModified()
     {
-        // Check that 3DIndustrialMonitor's working tree is still clean
-        // (This test only runs if git is available)
+        // Check that the checked-in fixture (tests/fixtures/RealWorldUnityProject)
+        // is not modified by the inspection pipeline. Scope the check to the
+        // fixture sub-tree so unrelated repo changes don't fail this test.
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "git",
-            Arguments = "status --short",
-            WorkingDirectory = RealProjectPath,
+            Arguments = "status --short -- tests/fixtures/RealWorldUnityProject",
+            WorkingDirectory = TestPaths.RepoRoot,
             RedirectStandardOutput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -732,6 +732,6 @@ public class M19RealProjectValidationTests
 
         // Working tree should be clean (no modifications)
         Assert.True(string.IsNullOrWhiteSpace(output),
-            $"3DIndustrialMonitor working tree was modified! git status output:\n{output}");
+            $"RealWorldUnityProject fixture was modified! git status output:\n{output}");
     }
 }

@@ -1,0 +1,15 @@
+# Unity regenerates these when the fixture project is opened/built by tests.
+# They must never be tracked — otherwise the fixture looks "modified" and
+# M19_VerifyProjectNotModified fails after any test run.
+Library/
+Build/
+Logs/
+UserSettings/
+Temp/
+obj/
+.vscode/
+*.csproj
+*.sln
+*.slnx
+Assets/UniversalRenderPipelineGlobalSettings.asset
+Assets/UniversalRenderPipelineGlobalSettings.asset.meta

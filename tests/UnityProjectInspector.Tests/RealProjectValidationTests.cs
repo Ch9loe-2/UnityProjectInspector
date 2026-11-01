@@ -16,8 +16,7 @@ namespace UnityProjectInspector.Tests;
 /// </summary>
 public class RealProjectValidationTests
 {
-    private const string RealProjectPath =
-        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
+    private static string RealProjectPath => TestPaths.RealWorldProject;
 
     private static string ScenePath =>
         Path.Combine(RealProjectPath, "Assets/Scenes/SampleScene.unity");

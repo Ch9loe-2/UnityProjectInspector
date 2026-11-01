@@ -35,11 +35,9 @@ public class M23_1_WorkflowHarnessIntegrationTests
     private const string UnityExecutable =
         "/Applications/Unity/Hub/Editor/2022.3.62f3c1/Unity.app/Contents/MacOS/Unity";
 
-    private const string ThreeDimPath =
-        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
+    private static string ThreeDimPath => TestPaths.RealWorldProject;
 
-    private const string InspectorRepoRoot =
-        "/Users/tangluyi/SelfContent/GitHub/UnityProjectInspector";
+    private static string InspectorRepoRoot => TestPaths.RepoRoot;
 
     private readonly RuleEngine _ruleEngine = new();
 

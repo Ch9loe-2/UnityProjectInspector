@@ -25,11 +25,15 @@ public static class RuntimePocRunner
         "..", "..", "..", "..", "..",
         "tools", "RuntimeTestHarness");
 
-    private const string DefaultProjectRoot =
-        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
+    private static readonly string RepoRoot = Path.GetFullPath(Path.Combine(
+        AppDomain.CurrentDomain.BaseDirectory,
+        "..", "..", "..", "..", ".."));
 
-    private const string DefaultScenePath =
-        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor/Assets/Scenes/SampleScene.unity";
+    private static readonly string DefaultProjectRoot = Path.Combine(
+        RepoRoot, "tests", "fixtures", "RealWorldUnityProject");
+
+    private static readonly string DefaultScenePath = Path.Combine(
+        DefaultProjectRoot, "Assets", "Scenes", "SampleScene.unity");
 
     public static async Task<int> Main(string[] args)
     {
