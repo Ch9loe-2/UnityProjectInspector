@@ -42,7 +42,7 @@ public class M19RealProjectCollection { }
 public class M19RealProjectValidationTests
 {
     private const string RealProjectPath =
-        "/Users/tangluyi/Documents/GitHub/3DIndustrialMonitor";
+        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
 
     private static readonly bool ProjectAvailable;
 

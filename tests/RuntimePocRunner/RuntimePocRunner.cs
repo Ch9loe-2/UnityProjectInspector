@@ -26,10 +26,10 @@ public static class RuntimePocRunner
         "tools", "RuntimeTestHarness");
 
     private const string DefaultProjectRoot =
-        "/Users/tangluyi/Documents/GitHub/3DIndustrialMonitor";
+        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
 
     private const string DefaultScenePath =
-        "/Users/tangluyi/Documents/GitHub/3DIndustrialMonitor/Assets/Scenes/SampleScene.unity";
+        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor/Assets/Scenes/SampleScene.unity";
 
     public static async Task<int> Main(string[] args)
     {

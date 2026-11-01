@@ -47,9 +47,9 @@ public class M22_5_HarnessDeploymentTests : IDisposable
     private const string UnityExecutable =
         "/Applications/Unity/Hub/Editor/2022.3.62f3c1/Unity.app/Contents/MacOS/Unity";
     private const string ThreeDimPath =
-        "/Users/tangluyi/Documents/GitHub/3DIndustrialMonitor";
+        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
     private const string InspectorRepoRoot =
-        "/Users/tangluyi/Documents/GitHub/UnityProjectInspector";
+        "/Users/tangluyi/SelfContent/GitHub/UnityProjectInspector";
     private readonly string _tempDir;
 
     public M22_5_HarnessDeploymentTests()

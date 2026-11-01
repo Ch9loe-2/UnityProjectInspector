@@ -19,7 +19,7 @@ namespace UnityProjectInspector.Tests;
 public class Milestone7_RuleConfigurationTests
 {
     private const string RealProjectPath =
-        "/Users/tangluyi/Documents/GitHub/3DIndustrialMonitor";
+        "/Users/tangluyi/SelfContent/GitHub/3DIndustrialMonitor";
 
     private static string ScenePath =>
         Path.Combine(RealProjectPath, "Assets/Scenes/SampleScene.unity");
